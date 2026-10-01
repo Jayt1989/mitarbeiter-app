@@ -1,69 +1,155 @@
-import Image from "next/image";
+import Link from "next/link";
 
 export default function Home() {
+  const areas = [
+    {
+      title: "Schichtplan",
+      description: "Deine Dienste und Arbeitszeiten im Überblick.",
+      label: "PLANUNG",
+      href: "/schichtplan",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="3.5" y="5" width="17" height="16" rx="2" />
+          <path d="M7.5 3v4M16.5 3v4M4 9.5h16M8 13h2m4 0h2M8 17h2" />
+        </svg>
+      ),
+      color: "bg-[#e1f2e8] text-[#197044]",
+      marker: "bg-[#3c9a69]",
+    },
+    {
+      title: "Urlaub",
+      description: "Abwesenheiten planen und Urlaubsanträge verwalten.",
+      label: "FREIZEIT",
+      href: "/urlaub",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 18.5 20 5.5M5.5 7.5l3 3m5-5 3 3M10 17l3 3m2-5 3 3" />
+          <path d="m4 18.5 1.5 1.5M20 5.5 18.5 4" />
+        </svg>
+      ),
+      color: "bg-[#fff0df] text-[#b65d22]",
+      marker: "bg-[#e58a45]",
+    },
+    {
+      title: "Mitarbeiter",
+      description: "Lerne dein Team kennen und finde wichtige Kontakte.",
+      label: "TEAM",
+      href: "/mitarbeiter",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 19v-1.5A4.5 4.5 0 0 1 8 13h2a4.5 4.5 0 0 1 4.5 4.5V19h-11Z" />
+          <path d="M16 5.3a3 3 0 0 1 0 5.8m2 2a4.5 4.5 0 0 1 2.5 4V19h-3" />
+        </svg>
+      ),
+      color: "bg-[#e5eff9] text-[#316b9b]",
+      marker: "bg-[#5d8eb8]",
+    },
+    {
+      title: "Admin",
+      description: "Verwaltung und Einstellungen für dein Unternehmen.",
+      label: "VERWALTUNG",
+      href: "/admin",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="m19.4 15 .1.1 1.2.9-1.2 2.1-1.4-.6a7.8 7.8 0 0 1-1.6.9l-.2 1.5h-2.4l-.2-1.5a7.8 7.8 0 0 1-1.6-.9l-1.4.6-1.2-2.1 1.2-.9a7.2 7.2 0 0 1 0-1.9l-1.2-.9 1.2-2.1 1.4.6a7.8 7.8 0 0 1 1.6-.9l.2-1.5h2.4l.2 1.5a7.8 7.8 0 0 1 1.6.9l1.4-.6 1.2 2.1-1.2.9a7.2 7.2 0 0 1 0 1.8Z" transform="translate(-1 -1) scale(1.08)" />
+        </svg>
+      ),
+      color: "bg-[#f1eafa] text-[#7850a1]",
+      marker: "bg-[#9272b6]",
+    },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">
+      <header className="border-b border-[#dce4dc] bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
+              MA
+            </span>
+            <span className="text-sm font-semibold tracking-[0.02em]">
+              MITARBEITERPORTAL
+            </span>
+          </div>
+          <span className="rounded-full border border-[#dce4dc] px-3 py-1.5 text-xs font-medium text-[#5f6f65]">
+            Intern
+          </span>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl px-5 pb-16 pt-12 sm:px-8 sm:pt-16">
+        <section className="relative overflow-hidden rounded-2xl bg-[#174c37] px-6 py-9 text-white sm:px-10 sm:py-12">
+          <div className="absolute -right-12 -top-20 size-64 rounded-full border border-white/10 sm:right-12 sm:top-[-8rem] sm:size-80" />
+          <div className="absolute -right-2 -top-10 size-44 rounded-full border border-white/10 sm:right-24 sm:top-[-5rem] sm:size-56" />
+          <p className="relative text-xs font-semibold tracking-[0.16em] text-[#a8d5b9]">
+            WILLKOMMEN IN DEINEM TEAMPORTAL
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          <h1 className="relative mt-3 text-3xl font-semibold sm:text-5xl">
+            Mitarbeiter-App
+          </h1>
+          <p className="relative mt-3 max-w-lg text-sm leading-6 text-[#d4e4d9] sm:text-base">
+            Alles Wichtige für deinen Arbeitsalltag an einem Ort.
+          </p>
+        </section>
+
+        <section className="mt-10 sm:mt-12" aria-labelledby="bereiche-titel">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.14em] text-[#668071]">
+                DEIN ÜBERBLICK
+              </p>
+              <h2 id="bereiche-titel" className="mt-1 text-xl font-semibold">
+                Deine Bereiche
+              </h2>
+            </div>
+            <span className="pb-0.5 text-sm text-[#6d7d72]">4 Bereiche</span>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {areas.map((area) => {
+              const card = (
+                <article className="group relative flex min-h-48 flex-col rounded-xl border border-[#e0e7e0] bg-white p-5 shadow-[0_2px_10px_rgba(28,43,35,0.03)] transition duration-200 hover:-translate-y-0.5 hover:border-[#bdcfc1] hover:shadow-[0_10px_24px_rgba(28,43,35,0.08)] sm:p-6">
+                  <div className="flex items-start justify-between">
+                    <span className={`flex size-12 items-center justify-center rounded-xl ${area.color}`}>
+                      <svg
+                        className="size-6 stroke-current stroke-[1.7]"
+                        viewBox="0 0 24 24"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        {area.icon.props.children}
+                      </svg>
+                    </span>
+                    <span className="flex items-center gap-2 pt-1 text-[10px] font-semibold tracking-[0.12em] text-[#7b897f]">
+                      <span className={`size-1.5 rounded-full ${area.marker}`} />
+                      {area.label}
+                    </span>
+                  </div>
+                  <h3 className="mt-5 text-lg font-semibold">{area.title}</h3>
+                  <p className="mt-1 max-w-sm text-sm leading-6 text-[#68766d]">
+                    {area.description}
+                  </p>
+                </article>
+              );
+
+              return area.href ? (
+                <Link
+                  key={area.title}
+                  href={area.href}
+                  className="rounded-xl focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]"
+                >
+                  {card}
+                </Link>
+              ) : (
+                <div key={area.title}>{card}</div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }
