@@ -1,5 +1,6 @@
 import { employeeRepository } from "../mitarbeiter/repository";
 import { sampleQualifications, type Qualification } from "./qualifications-data";
+import { refreshNotifications } from "@/app/components/notification-events";
 
 const storageKey = "mitarbeiter-app.qualifikationen.v1";
 
@@ -125,20 +126,15 @@ export const qualificationsRepository: QualificationsRepository = {
   },
 
   async setEmployeeLevel(employeeId, qualificationId, level) {
-    const updated = await fetchJson<{ employeeId: string }>("/api/employee-qualifications", {
+    const response = await fetch("/api/employee-qualifications", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ employeeId, qualificationId, level }),
     });
-    if (updated) return;
-
-    const employees = await employeeRepository.loadAll();
-    if (!employees) throw new Error("Mitarbeiter konnten nicht geladen werden.");
-    const nextEmployees = employees.map((employee) =>
-      employee.id === employeeId
-        ? { ...employee, qualifications: { ...(employee.qualifications ?? {}), [qualificationId]: level } }
-        : employee,
-    );
-    await employeeRepository.saveAll(nextEmployees);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error ?? "Die Qualifikation konnte nicht gespeichert werden.");
+    }
+    refreshNotifications();
   },
 };

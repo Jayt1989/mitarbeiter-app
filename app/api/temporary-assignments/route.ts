@@ -7,6 +7,9 @@ import {
 } from "@/lib/authorization";
 import { recordAuditLog } from "@/lib/audit";
 import { labelToShiftCode, toAreaConfiguration } from "@/lib/area-mapper";
+import { fromShiftCode } from "@/lib/employee-mapper";
+import { createNotification } from "@/lib/notifications";
+import { assignmentNotification } from "@/lib/notification-messages";
 import {
   temporaryAssignmentRelations,
   toTemporaryAssignmentDto,
@@ -181,17 +184,23 @@ export async function POST(request: Request) {
   }
   const { input } = validation;
 
-  const created = await prisma.temporaryAssignment.create({
-    data: {
-      employeeId: input.employeeId,
-      departmentId: input.areaId,
-      startDate: toDate(input.startDate),
-      endDate: toDate(input.endDate),
-      shift: input.shift ? labelToShiftCode[input.shift] : null,
-      note: input.note || null,
-      createdById: context.userId,
-    },
-    include: temporaryAssignmentRelations,
+  const created = await prisma.$transaction(async (tx) => {
+    const record = await tx.temporaryAssignment.create({
+      data: {
+        employeeId: input.employeeId,
+        departmentId: input.areaId,
+        startDate: toDate(input.startDate),
+        endDate: toDate(input.endDate),
+        shift: input.shift ? labelToShiftCode[input.shift] : null,
+        note: input.note || null,
+        createdById: context.userId,
+      },
+      include: temporaryAssignmentRelations,
+    });
+    await createNotification(tx, assignmentNotification({
+      ...record, shift: record.shift ? fromShiftCode(record.shift) : null,
+    }, "created"));
+    return record;
   });
   const dto = toTemporaryAssignmentDto(created);
 
@@ -235,11 +244,23 @@ export async function PATCH(request: Request) {
   const before = toTemporaryAssignmentDto(existingRecord);
 
   if (body.action === "cancel") {
-    const cancelled = await prisma.temporaryAssignment.update({
-      where: { id: body.id },
-      data: { cancelledAt: new Date() },
-      include: temporaryAssignmentRelations,
+    const cancelled = await prisma.$transaction(async (tx) => {
+      const changed = await tx.temporaryAssignment.updateMany({
+        where: { id: before.id, cancelledAt: null, updatedAt: existingRecord.updatedAt },
+        data: { cancelledAt: new Date() },
+      });
+      if (changed.count === 0) return null;
+      const record = await tx.temporaryAssignment.findUniqueOrThrow({
+        where: { id: before.id }, include: temporaryAssignmentRelations,
+      });
+      await createNotification(tx, assignmentNotification({
+        ...record, shift: record.shift ? fromShiftCode(record.shift) : null,
+      }, "cancelled"));
+      return record;
     });
+    if (!cancelled) {
+      return NextResponse.json({ error: "Der Einsatz wurde inzwischen geändert. Bitte neu laden." }, { status: 409 });
+    }
     const dto = toTemporaryAssignmentDto(cancelled);
 
     await recordAuditLog({
@@ -263,17 +284,36 @@ export async function PATCH(request: Request) {
   }
   const { input } = validation;
 
-  const updated = await prisma.temporaryAssignment.update({
-    where: { id: body.id },
-    data: {
-      departmentId: input.areaId,
-      startDate: toDate(input.startDate),
-      endDate: toDate(input.endDate),
-      shift: input.shift ? labelToShiftCode[input.shift] : null,
-      note: input.note || null,
-    },
-    include: temporaryAssignmentRelations,
+  const updated = await prisma.$transaction(async (tx) => {
+    const changed = await tx.temporaryAssignment.updateMany({
+      where: { id: before.id, cancelledAt: null, updatedAt: existingRecord.updatedAt },
+      data: {
+        departmentId: input.areaId,
+        startDate: toDate(input.startDate),
+        endDate: toDate(input.endDate),
+        shift: input.shift ? labelToShiftCode[input.shift] : null,
+        note: input.note || null,
+      },
+    });
+    if (changed.count === 0) return null;
+    const record = await tx.temporaryAssignment.findUniqueOrThrow({
+      where: { id: before.id }, include: temporaryAssignmentRelations,
+    });
+    const hasChanges = before.areaId !== input.areaId ||
+      before.startDate !== input.startDate || before.endDate !== input.endDate ||
+      before.shift !== input.shift || before.note !== input.note;
+    if (hasChanges) {
+      await createNotification(tx, assignmentNotification({
+        ...record, shift: record.shift ? fromShiftCode(record.shift) : null,
+      }, "updated", {
+        ...existingRecord, shift: existingRecord.shift ? fromShiftCode(existingRecord.shift) : null,
+      }));
+    }
+    return record;
   });
+  if (!updated) {
+    return NextResponse.json({ error: "Der Einsatz wurde inzwischen geändert. Bitte neu laden." }, { status: 409 });
+  }
   const dto = toTemporaryAssignmentDto(updated);
 
   await recordAuditLog({

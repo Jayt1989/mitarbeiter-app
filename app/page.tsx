@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 
 export default function Home() {
   const areas = [
@@ -69,13 +70,14 @@ export default function Home() {
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
               MA
             </span>
-            <span className="text-sm font-semibold tracking-[0.02em]">
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
               MITARBEITERPORTAL
             </span>
           </div>
-          <span className="rounded-full border border-[#dce4dc] px-3 py-1.5 text-xs font-medium text-[#5f6f65]">
-            Intern
-          </span>
+          <nav className="flex items-center gap-2" aria-label="Hauptnavigation">
+            <span className="rounded-full border border-[#dce4dc] px-3 py-1.5 text-xs font-medium text-[#5f6f65]">Intern</span>
+            <NotificationBell />
+          </nav>
         </div>
       </header>
 

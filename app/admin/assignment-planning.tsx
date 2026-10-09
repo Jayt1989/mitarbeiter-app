@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { sampleEmployees } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
@@ -231,6 +232,7 @@ export default function AssignmentPlanning() {
             <Link href="/admin/wochenplan" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] sm:px-3 sm:text-sm">
               Wochenplan
             </Link>
+            <NotificationBell />
           </nav>
         </div>
       </header>

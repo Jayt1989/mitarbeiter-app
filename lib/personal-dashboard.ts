@@ -50,14 +50,6 @@ export type DashboardDay = {
   marks: CalendarMarks;
 };
 
-/** Platzhalter für spätere Benachrichtigungen (Urlaub genehmigt, Schicht geändert …). */
-export type DashboardNotification = {
-  id: string;
-  title: string;
-  message: string;
-  createdAt: string;
-};
-
 export type PersonalDashboardData = {
   greeting: string;
   todayKey: string;
@@ -70,8 +62,10 @@ export type PersonalDashboardData = {
     ownVacation: boolean;
     requestVacation: boolean;
     qualifications: boolean;
+    shiftSwap: boolean;
+    performance: boolean;
+    performanceReport: boolean;
   };
-  notifications: DashboardNotification[];
   today: DashboardDay | null;
   nextShift: DashboardDay | null;
   week: DashboardDay[];
@@ -120,6 +114,10 @@ export async function loadPersonalDashboard(
     requestVacation: context.permissions.requestVacation === true,
     qualifications:
       context.permissions.ownQualifications === true || context.permissions.viewQualifications === true,
+    shiftSwap: context.permissions.requestShiftSwap === true,
+    performance: context.permissions.recordPerformance === true,
+    performanceReport: (context.role === "ADMIN" || context.role === "FOREMAN") &&
+      context.permissions.viewPerformance === true,
   };
 
   const { dateKey: todayKey, hour } = berlinNowParts();
@@ -247,7 +245,6 @@ export async function loadPersonalDashboard(
     areaName,
     shiftModelLabel: shiftModelLabels[employee.shiftModel],
     permissions,
-    notifications: [],
     today: permissions.shiftPlan ? dayInfo(todayKey) : null,
     nextShift,
     week: permissions.shiftPlan

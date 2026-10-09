@@ -35,10 +35,12 @@ export function toEmployeeDto(record: EmployeeRecord): Employee {
     }),
   ) as Employee["permissions"];
   const individualAssignments = Object.fromEntries(
-    record.shiftAssignments.map((assignment) => [
-      assignment.date.toISOString().slice(0, 10),
-      fromShiftCode(assignment.shift),
-    ]),
+    record.shiftAssignments
+      .filter((assignment) => record.shiftModel.code === "individuell" || assignment.source === "MANUAL")
+      .map((assignment) => [
+        assignment.date.toISOString().slice(0, 10),
+        fromShiftCode(assignment.shift),
+      ]),
   );
   const role: EmployeeRole = record.user?.role.code === "ADMIN"
     ? "Admin"
@@ -58,7 +60,7 @@ export function toEmployeeDto(record: EmployeeRecord): Employee {
     firstName: record.firstName,
     lastName: record.lastName,
     personnelNumber: record.personnelNumber,
-    email: record.email,
+    email: record.email ?? "",
     role,
     shiftModel: record.shiftModel.code as Employee["shiftModel"],
     shiftGroup,
@@ -69,6 +71,14 @@ export function toEmployeeDto(record: EmployeeRecord): Employee {
     permissions,
     individualAssignments,
     qualifications,
+    // Nur Statusinformationen – Passwort-Hash verlässt nie den Server.
+    account: record.user
+      ? {
+          login: record.user.login,
+          active: record.user.active,
+          mustChangePassword: record.user.mustChangePassword,
+        }
+      : null,
   };
 }
 

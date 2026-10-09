@@ -34,6 +34,10 @@ export type EmployeePermissions = {
   manageVacationYears: boolean;
   exportReports: boolean;
   viewReports: boolean;
+  requestShiftSwap: boolean;
+  approveShiftSwap: boolean;
+  recordPerformance: boolean;
+  viewPerformance: boolean;
 };
 
 export const permissionOptions = [
@@ -59,6 +63,10 @@ export const permissionOptions = [
   { id: "manageVacationYears", label: "Urlaubsjahre verwalten" },
   { id: "exportReports", label: "Exporte erstellen" },
   { id: "viewReports", label: "Auswertungen sehen" },
+  { id: "requestShiftSwap", label: "Eigenen Schichttausch anfragen und beantworten" },
+  { id: "approveShiftSwap", label: "Schichttausch prüfen und genehmigen" },
+  { id: "recordPerformance", label: "Eigene Leistung erfassen" },
+  { id: "viewPerformance", label: "Leistungen auswerten" },
 ] as const satisfies ReadonlyArray<{
   id: keyof EmployeePermissions;
   label: string;
@@ -80,6 +88,13 @@ export type Employee = {
   permissions: EmployeePermissions;
   individualAssignments?: Readonly<Record<string, Shift>>;
   qualifications?: Readonly<Record<string, number>>;
+  account?: EmployeeAccount | null;
+};
+
+export type EmployeeAccount = {
+  login: string;
+  active: boolean;
+  mustChangePassword: boolean;
 };
 
 function makePermissions(
@@ -108,6 +123,10 @@ function makePermissions(
     manageVacationYears: false,
     exportReports: false,
     viewReports: false,
+    requestShiftSwap: true,
+    approveShiftSwap: false,
+    recordPerformance: true,
+    viewPerformance: false,
     ...overrides,
   };
 }
@@ -119,28 +138,13 @@ const foremanPermissions = makePermissions({
   editShiftPlans: true,
   recordAbsence: true,
   viewQualifications: true,
+  approveShiftSwap: true,
+  viewPerformance: true,
 });
 
-const adminPermissions = makePermissions({
-  teamShiftPlan: true,
-  otherVacations: true,
-  approveVacation: true,
-  viewEmployees: true,
-  editEmployees: true,
-  editShiftPlans: true,
-  recordAbsence: true,
-  openAdmin: true,
-  editMinimumStaffing: true,
-  editDepartments: true,
-  editQualifications: true,
-  viewQualifications: true,
-  manageQualifications: true,
-  editAssignments: true,
-  editCalendar: true,
-  manageVacationYears: true,
-  exportReports: true,
-  viewReports: true,
-});
+const adminPermissions = Object.fromEntries(
+  permissionOptions.map(({ id }) => [id, true]),
+) as EmployeePermissions;
 
 export const sampleEmployees: Employee[] = [
   {

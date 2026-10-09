@@ -79,9 +79,10 @@ export type WeeklyStaffing = {
 
 export function getStaffingAbsences(
   requests: readonly VacationRequest[],
+  recordedAbsences: readonly AbsenceEntry[] = sampleAbsences,
 ): AbsenceEntry[] {
   return [
-    ...sampleAbsences,
+    ...recordedAbsences,
     ...requests
       .filter((request) => request.status === "Genehmigt")
       .map((request) => ({

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getAuthorizationContext, hasPermission } from "@/lib/authorization";
 import { recordAuditLog } from "@/lib/audit";
 import { qualificationLevels } from "@/app/admin/qualifications-data";
+import { createNotification } from "@/lib/notifications";
+import { qualificationNotification } from "@/lib/notification-messages";
 
 export async function PUT(request: Request) {
   const context = await getAuthorizationContext();
@@ -39,20 +41,27 @@ export async function PUT(request: Request) {
     },
   });
 
-  const updated = await prisma.employeeQualification.upsert({
-    where: {
-      employeeId_qualificationId: {
-        employeeId: body.employeeId,
-        qualificationId: body.qualificationId,
-      },
-    },
-    update: { level: body.level },
-    create: {
-      employeeId: body.employeeId,
-      qualificationId: body.qualificationId,
-      level: body.level,
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const key = { employeeId: body.employeeId, qualificationId: body.qualificationId };
+    if (before) {
+      const changed = await tx.employeeQualification.updateMany({
+        where: { ...key, level: before.level },
+        data: { level: body.level },
+      });
+      if (changed.count === 0) return null;
+    } else {
+      await tx.employeeQualification.create({ data: { ...key, level: body.level } });
+    }
+    if (body.level > 0 && (!before || before.level === 0)) {
+      await createNotification(tx, qualificationNotification(body.employeeId, qualification.name));
+    }
+    return tx.employeeQualification.findUniqueOrThrow({
+      where: { employeeId_qualificationId: key },
+    });
   });
+  if (!updated) {
+    return NextResponse.json({ error: "Die Qualifikation wurde inzwischen geändert. Bitte neu laden." }, { status: 409 });
+  }
 
   await recordAuditLog({
     actorUserId: context.userId,

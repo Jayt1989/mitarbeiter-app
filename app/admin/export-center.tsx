@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
 import { areaRepository } from "./areas-repository";
@@ -154,6 +155,7 @@ export default function ExportCenter() {
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
             <Link href="/admin" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Personalbesetzung</Link>
             <Link href="/admin/wochenplan" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Wochenplan</Link>
+            <NotificationBell />
           </nav>
         </div>
       </header>

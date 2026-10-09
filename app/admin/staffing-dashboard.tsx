@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { sampleEmployees } from "../mitarbeiter/data";
-import { employeeRepository } from "../mitarbeiter/repository";
+import { shiftPlanRepository } from "../schichtplan/repository";
 import {
   formatDate,
   getDailyStaffing,
@@ -16,9 +17,8 @@ import {
   type EmployeeDay,
   type TrafficLight,
 } from "./staffing";
-import { absenceTypes } from "./staffing-data";
+import { absenceTypes, type AbsenceEntry } from "./staffing-data";
 import { sampleVacationRequests, type VacationRequest } from "../urlaub/vacation-data";
-import { vacationRepository } from "../urlaub/vacation-repository";
 import { areaRepository } from "./areas-repository";
 import {
   sampleAreaConfiguration,
@@ -26,7 +26,6 @@ import {
   type WorkArea,
 } from "./areas-data";
 import type { TemporaryAssignment } from "./assignments-data";
-import { assignmentRepository } from "./assignments-repository";
 import YearSelector from "../components/year-selector";
 import { calendarRepository } from "./calendar-repository";
 import {
@@ -109,9 +108,9 @@ function matchesFilter(employee: EmployeeDay, filter: StaffFilter) {
   return employee.shift === filter;
 }
 
-export default function StaffingDashboard() {
+export default function StaffingDashboard({ initialDate }: { initialDate?: string }) {
   const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
-  const [selectedDate, setSelectedDate] = useState(() => berlinTodayKey());
+  const [selectedDate, setSelectedDate] = useState(() => initialDate ?? berlinTodayKey());
   const [viewMode, setViewMode] = useState<ViewMode>("Woche");
   const [staffFilter, setStaffFilter] = useState<StaffFilter>("Alle Mitarbeiter");
   const [areaFilter, setAreaFilter] = useState<AreaFilter>("Alle Bereiche");
@@ -119,6 +118,8 @@ export default function StaffingDashboard() {
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>(sampleVacationRequests);
   const [assignments, setAssignments] = useState<TemporaryAssignment[]>([]);
   const [calendar, setCalendar] = useState<CalendarData>(defaultCalendarData);
+  const [recordedAbsences, setRecordedAbsences] = useState<AbsenceEntry[]>([]);
+  const [planningError, setPlanningError] = useState("");
 
   useEffect(() => {
     let isCurrent = true;
@@ -135,36 +136,25 @@ export default function StaffingDashboard() {
   useEffect(() => {
     let isCurrent = true;
 
-    void assignmentRepository.loadAll().then((storedAssignments) => {
-      if (isCurrent) setAssignments(storedAssignments);
-    });
-
-    return () => {
-      isCurrent = false;
+    const refresh = () => {
+      void shiftPlanRepository.load("staffing").then((data) => {
+        if (!isCurrent) return;
+        setEmployees(data.employees);
+        setRecordedAbsences(data.absences);
+        setVacationRequests(data.vacations);
+        setAssignments(data.assignments);
+        setPlanningError("");
+      }).catch((error: unknown) => {
+        if (isCurrent) setPlanningError(error instanceof Error ? error.message : "Personalplanung konnte nicht aktualisiert werden.");
+      });
     };
-  }, []);
-
-  useEffect(() => {
-    let isCurrent = true;
-
-    void employeeRepository.loadAll().then((storedEmployees) => {
-      if (isCurrent && storedEmployees) setEmployees(storedEmployees);
-    });
-
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("planning:changed", refresh);
     return () => {
       isCurrent = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isCurrent = true;
-
-    void vacationRepository.loadAll().then((storedRequests) => {
-      if (isCurrent) setVacationRequests(storedRequests);
-    });
-
-    return () => {
-      isCurrent = false;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("planning:changed", refresh);
     };
   }, []);
 
@@ -180,7 +170,7 @@ export default function StaffingDashboard() {
     };
   }, []);
 
-  const staffingAbsences = getStaffingAbsences(vacationRequests);
+  const staffingAbsences = getStaffingAbsences(vacationRequests, recordedAbsences);
 
   const selectedDay = getDailyStaffing(
     dateFromInput(selectedDate),
@@ -221,11 +211,13 @@ export default function StaffingDashboard() {
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
               MA
             </span>
-            <span className="text-sm font-semibold tracking-[0.02em]">
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
               MITARBEITERPORTAL
             </span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
+            <Link href="/admin/schichttausch" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Schichttausch</Link>
+            <Link href="/admin/leistung" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Leistung</Link>
             <Link
               href="/admin/einsatzplanung"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
@@ -268,11 +260,13 @@ export default function StaffingDashboard() {
               <span className="sm:hidden">Team</span>
               <span className="hidden sm:inline">Mitarbeiter</span>
             </Link>
+            <NotificationBell />
           </nav>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 pb-14 pt-8 sm:px-8 sm:pt-12">
+        {planningError && <p role="alert" className="mb-4 rounded-lg bg-[#fff0ec] p-3 text-sm text-[#a33e31]">{planningError}</p>}
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-semibold tracking-[0.15em] text-[#668071]">
@@ -832,4 +826,3 @@ function ArrowIcon({ direction }: { direction: "left" | "right" }) {
     </svg>
   );
 }
-

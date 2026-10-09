@@ -21,7 +21,9 @@ export async function getAuthorizationContext(): Promise<AuthorizationContext | 
       employee: { include: { permissions: { include: { permission: true } } } },
     },
   });
-  if (!user?.active) return null;
+  if (!user?.active || user.employee?.isActive === false) return null;
+  // Solange das Startpasswort nicht ersetzt wurde, gibt es keinen Zugriff auf App-Funktionen.
+  if (user.mustChangePassword) return null;
 
   const permissions = Object.fromEntries(
     user.role.permissions.map((entry) => [entry.permission.key, entry.allowed]),

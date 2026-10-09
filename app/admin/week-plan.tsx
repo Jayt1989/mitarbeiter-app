@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { sampleEmployees } from "../mitarbeiter/data";
-import { employeeRepository } from "../mitarbeiter/repository";
+import { shiftPlanRepository } from "../schichtplan/repository";
+import type { AbsenceEntry } from "./staffing-data";
 import { sampleVacationRequests, type VacationRequest } from "../urlaub/vacation-data";
-import { vacationRepository } from "../urlaub/vacation-repository";
 import { areaRepository } from "./areas-repository";
 import { sampleAreaConfiguration, type AreaConfiguration } from "./areas-data";
 import type { TemporaryAssignment } from "./assignments-data";
-import { assignmentRepository } from "./assignments-repository";
 import {
   formatDate,
   getStaffingAbsences,
@@ -53,34 +53,52 @@ export default function WeekPlan() {
   const [assignments, setAssignments] = useState<TemporaryAssignment[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => berlinTodayKey());
   const [calendar, setCalendar] = useState<CalendarData>(defaultCalendarData);
+  const [recordedAbsences, setRecordedAbsences] = useState<AbsenceEntry[]>([]);
+  const [planningError, setPlanningError] = useState("");
 
   useEffect(() => {
     let isCurrent = true;
 
     void Promise.all([
-      employeeRepository.loadAll(),
+      shiftPlanRepository.load("staffing"),
       areaRepository.load(),
-      vacationRepository.loadAll(),
-      assignmentRepository.loadAll(),
       calendarRepository.load(),
-    ]).then(([storedEmployees, storedAreas, storedRequests, storedAssignments, storedCalendar]) => {
+    ]).then(([plan, storedAreas, storedCalendar]) => {
       if (!isCurrent) return;
-      if (storedEmployees) setEmployees(storedEmployees);
+      setEmployees(plan.employees);
+      setRecordedAbsences(plan.absences);
       setAreaConfiguration(storedAreas);
-      setVacationRequests(storedRequests);
-      setAssignments(storedAssignments);
+      setVacationRequests(plan.vacations);
+      setAssignments(plan.assignments);
       setCalendar(storedCalendar);
+    }).catch((error: unknown) => {
+      if (isCurrent) setPlanningError(error instanceof Error ? error.message : "Wochenplanung konnte nicht geladen werden.");
     });
-
+    const refresh = () => {
+      void shiftPlanRepository.load("staffing").then((plan) => {
+        if (!isCurrent) return;
+        setEmployees(plan.employees);
+        setRecordedAbsences(plan.absences);
+        setVacationRequests(plan.vacations);
+        setAssignments(plan.assignments);
+        setPlanningError("");
+      }).catch((error: unknown) => {
+        if (isCurrent) setPlanningError(error instanceof Error ? error.message : "Wochenplanung konnte nicht aktualisiert werden.");
+      });
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("planning:changed", refresh);
     return () => {
       isCurrent = false;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("planning:changed", refresh);
     };
   }, []);
 
   const week = getWeeklyStaffing(
     dateFromInput(selectedDate),
     employees,
-    getStaffingAbsences(vacationRequests),
+    getStaffingAbsences(vacationRequests, recordedAbsences),
     areaConfiguration,
     assignments,
   );
@@ -125,11 +143,13 @@ export default function WeekPlan() {
             <Link href="/admin/einsatzplanung" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">
               Einsatzplanung
             </Link>
+            <NotificationBell />
           </nav>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 pb-14 pt-8 sm:px-8 sm:pt-12 print:max-w-none print:p-0">
+        {planningError && <p role="alert" className="mb-4 rounded-lg bg-[#fff0ec] p-3 text-sm text-[#a33e31]">{planningError}</p>}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between print:hidden">
           <div>
             <p className="text-xs font-semibold tracking-[0.15em] text-[#668071]">ADMIN · DRUCKANSICHT A4</p>

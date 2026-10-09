@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import YearSelector from "../components/year-selector";
 import { calendarRepository } from "./calendar-repository";
 import {
@@ -121,6 +122,7 @@ export default function CalendarSettings() {
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
             <Link href="/admin" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Personalbesetzung</Link>
             <Link href="/admin/jahreswechsel" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Jahreswechsel</Link>
+            <NotificationBell />
           </nav>
         </div>
       </header>

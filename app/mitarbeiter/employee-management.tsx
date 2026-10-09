@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import {
   createEmployeeDraft,
   employeeRoles,
@@ -13,6 +14,9 @@ import {
 } from "./data";
 import { shiftModelOptions } from "../schichtplan/rotation";
 import { employeeRepository } from "./repository";
+import { AccountBadge, AccountPanel, OneTimePasswordNotice, TemporaryPasswordInput } from "./account-section";
+import { EmployeeRemovalPanel } from "./deletion-section";
+import { passwordPolicyErrors } from "@/lib/password-policy";
 import { sampleAreaConfiguration, type WorkArea } from "../admin/areas-data";
 import { areaRepository } from "../admin/areas-repository";
 import { qualificationsRepository } from "../admin/qualifications-repository";
@@ -49,6 +53,32 @@ export default function EmployeeManagement() {
   const [areas, setAreas] = useState<WorkArea[]>(sampleAreaConfiguration.areas);
   const [qualifications, setQualifications] = useState<Qualification[]>(sampleQualifications);
   const [qualificationError, setQualificationError] = useState("");
+  const [session, setSession] = useState<{ canManageAccounts: boolean; employeeId: string | null }>({
+    canManageAccounts: false,
+    employeeId: null,
+  });
+  const [startPassword, setStartPassword] = useState("");
+  const [startPasswordGenerated, setStartPasswordGenerated] = useState(false);
+  const [createdAccount, setCreatedAccount] = useState<{ name: string; login: string; password: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [removalNotice, setRemovalNotice] = useState("");
+
+  useEffect(() => {
+    let isCurrent = true;
+    void fetch("/api/session", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { role?: string; employeeId?: string | null; permissions?: Record<string, boolean> } | null) => {
+        if (!isCurrent || !body) return;
+        setSession({
+          canManageAccounts: body.role === "ADMIN" && body.permissions?.editEmployees === true,
+          employeeId: body.employeeId ?? null,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -133,12 +163,27 @@ export default function EmployeeManagement() {
 
   function openNewEmployee() {
     setFormError("");
+    setStartPassword("");
+    setStartPasswordGenerated(false);
+    setCreatedAccount(null);
     setDraft(createEmployeeDraft());
   }
 
   function openEditEmployee(employee: Employee) {
     setFormError("");
+    setCreatedAccount(null);
     setDraft(cloneEmployee(employee));
+  }
+
+  async function reloadEmployees() {
+    const stored = await employeeRepository.loadAll();
+    if (!stored) return;
+    setEmployees(stored);
+    setDraft((current) => {
+      if (!current?.id) return current;
+      const reloaded = stored.find((employee) => employee.id === current.id);
+      return reloaded ? { ...current, account: reloaded.account } : current;
+    });
   }
 
   function updateField<K extends keyof Employee>(key: K, value: Employee[K]) {
@@ -199,12 +244,43 @@ export default function EmployeeManagement() {
         employee.id !== savedEmployee.id &&
         (employee.personnelNumber.toLocaleLowerCase("de") ===
           savedEmployee.personnelNumber.toLocaleLowerCase("de") ||
-          employee.email.toLocaleLowerCase("de") ===
-            savedEmployee.email.toLocaleLowerCase("de")),
+          (!!savedEmployee.email &&
+            employee.email.toLocaleLowerCase("de") ===
+              savedEmployee.email.toLocaleLowerCase("de"))),
     );
 
     if (duplicate) {
       setFormError("Personalnummer und E-Mail-Adresse müssen eindeutig sein.");
+      return;
+    }
+
+    if (!savedEmployee.id && session.canManageAccounts) {
+      const problems = passwordPolicyErrors(startPassword);
+      if (problems.length) {
+        setFormError(`Startpasswort: ${problems.join(" ")}`);
+        return;
+      }
+      setIsSaving(true);
+      try {
+        const nextEmployees = await employeeRepository.createWithAccount(savedEmployee, startPassword);
+        setEmployees(nextEmployees);
+        setCreatedAccount(
+          startPasswordGenerated
+            ? {
+                name: `${savedEmployee.firstName} ${savedEmployee.lastName}`,
+                login: savedEmployee.personnelNumber,
+                password: startPassword,
+              }
+            : null,
+        );
+        setStartPassword("");
+        setStartPasswordGenerated(false);
+        setDraft(null);
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : "Der Mitarbeiter konnte nicht angelegt werden.");
+      } finally {
+        setIsSaving(false);
+      }
       return;
     }
 
@@ -214,12 +290,16 @@ export default function EmployeeManagement() {
         )
       : [{ ...savedEmployee, id: crypto.randomUUID() }, ...employees];
 
+    setIsSaving(true);
     try {
       await employeeRepository.saveAll(nextEmployees);
       setEmployees(nextEmployees);
       setDraft(null);
-    } catch {
-      setFormError("Die Änderungen konnten lokal nicht gespeichert werden.");
+      void reloadEmployees();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Die Änderungen konnten nicht gespeichert werden.");
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -237,16 +317,14 @@ export default function EmployeeManagement() {
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
               MA
             </span>
-            <span className="text-sm font-semibold tracking-[0.02em]">
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
               MITARBEITERPORTAL
             </span>
           </Link>
-          <Link
-            href="/"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]"
-          >
-            Zum Dashboard
-          </Link>
+          <nav className="flex items-center gap-2" aria-label="Hauptnavigation">
+            <Link href="/" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]">Zum Dashboard</Link>
+            <NotificationBell />
+          </nav>
         </div>
       </header>
 
@@ -282,6 +360,26 @@ export default function EmployeeManagement() {
             Mitarbeiter hinzufügen
           </button>
         </div>
+
+        {removalNotice && (
+          <div role="status" className="mt-6 flex items-start justify-between gap-3 rounded-lg border border-[#cfe3d4] bg-[#eef7f0] px-3.5 py-3 text-sm text-[#174c37]">
+            <span>{removalNotice}</span>
+            <button type="button" onClick={() => setRemovalNotice("")} className="shrink-0 text-xs font-semibold underline-offset-2 hover:underline">
+              Ausblenden
+            </button>
+          </div>
+        )}
+
+        {createdAccount && (
+          <div className="mt-6">
+            <OneTimePasswordNotice
+              title={`${createdAccount.name} wurde mit Benutzerkonto angelegt.`}
+              login={createdAccount.login}
+              password={createdAccount.password}
+              onClose={() => setCreatedAccount(null)}
+            />
+          </div>
+        )}
 
         <section className="mt-7 grid grid-cols-2 gap-3 sm:max-w-xl sm:gap-4" aria-label="Mitarbeiterübersicht">
           <div className="rounded-xl border border-[#e0e7e0] bg-white px-4 py-3.5 sm:px-5">
@@ -355,7 +453,7 @@ export default function EmployeeManagement() {
 
           <div className="hidden overflow-hidden rounded-xl border border-[#e0e7e0] bg-white md:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] border-collapse text-left">
+              <table className="w-full min-w-[1220px] border-collapse text-left">
                 <thead className="bg-[#f8faf7] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#77847b]">
                   <tr>
                     <th scope="col" className="px-5 py-3.5">Mitarbeiter</th>
@@ -365,6 +463,7 @@ export default function EmployeeManagement() {
                     <th scope="col" className="px-4 py-3.5">Schichtgruppe</th>
                     <th scope="col" className="px-4 py-3.5">Bereich</th>
                     <th scope="col" className="px-4 py-3.5">Status</th>
+                    <th scope="col" className="px-4 py-3.5">Konto</th>
                     <th scope="col" className="px-4 py-3.5"><span className="sr-only">Aktionen</span></th>
                   </tr>
                 </thead>
@@ -392,6 +491,9 @@ export default function EmployeeManagement() {
                       <td className="px-4 py-4 text-sm text-[#526056]">{areaName(employee.areaId, areas)}</td>
                       <td className="px-4 py-4">
                         <StatusBadge isActive={employee.isActive} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <AccountBadge account={employee.account} />
                       </td>
                       <td className="px-4 py-4 text-right">
                         <button
@@ -431,6 +533,10 @@ export default function EmployeeManagement() {
                   />
                   <Description label="Schichtgruppe" value={employee.shiftGroup} />
                   <Description label="Bereich" value={areaName(employee.areaId, areas)} />
+                  <div className="min-w-0">
+                    <dt className="text-[10px] font-medium uppercase tracking-[0.06em] text-[#859189]">Benutzerkonto</dt>
+                    <dd className="mt-1"><AccountBadge account={employee.account} /></dd>
+                  </div>
                 </dl>
                 <button
                   type="button"
@@ -515,11 +621,10 @@ export default function EmployeeManagement() {
                         className={inputClass}
                       />
                     </Field>
-                    <Field label="E-Mail-Adresse" htmlFor="email">
+                    <Field label="E-Mail-Adresse (optional)" htmlFor="email">
                       <input
                         id="email"
                         type="email"
-                        required
                         value={draft.email}
                         onChange={(event) => updateField("email", event.target.value)}
                         className={inputClass}
@@ -606,7 +711,34 @@ export default function EmployeeManagement() {
                       />
                     </Field>
                   </div>
+                  {!draft.id && session.canManageAccounts && (
+                    <div className="mt-5 rounded-lg border border-[#e3e9e3] px-3.5 py-3.5 sm:px-4">
+                      <TemporaryPasswordInput
+                        id="startPassword"
+                        label="Startpasswort"
+                        value={startPassword}
+                        onChange={(value, generated) => {
+                          setStartPassword(value);
+                          setStartPasswordGenerated(generated);
+                        }}
+                      />
+                      <p className="mt-2 text-xs text-[#77847b]">
+                        Es wird automatisch ein Benutzerkonto mit der Personalnummer als Anmeldename angelegt.
+                        Beim ersten Login muss ein eigenes Passwort festgelegt werden.
+                      </p>
+                    </div>
+                  )}
                 </section>
+
+                {draft.id && (
+                  <AccountPanel
+                    key={draft.id}
+                    employee={draft}
+                    canManage={session.canManageAccounts}
+                    isSelf={!!session.employeeId && session.employeeId === draft.id}
+                    onChanged={reloadEmployees}
+                  />
+                )}
 
                 <section aria-labelledby="permissions-title">
                   <div className="mb-4 flex items-end justify-between gap-3">
@@ -673,6 +805,28 @@ export default function EmployeeManagement() {
                   )}
                 </section>
 
+                {draft.id && session.canManageAccounts && (
+                  <EmployeeRemovalPanel
+                    key={`removal-${draft.id}`}
+                    employee={draft}
+                    isSelf={!!session.employeeId && session.employeeId === draft.id}
+                    onDeactivated={async () => {
+                      // Entwurf angleichen, damit „Änderungen speichern“ nicht wieder aktiviert.
+                      const id = draft.id;
+                      setDraft((current) => (current?.id === id ? { ...current, isActive: false } : current));
+                      setEmployees((current) => current.map((entry) => (entry.id === id ? { ...entry, isActive: false } : entry)));
+                      await reloadEmployees();
+                    }}
+                    onDeleted={(name) => {
+                      const id = draft.id;
+                      setDraft(null);
+                      setEmployees((current) => current.filter((entry) => entry.id !== id));
+                      setRemovalNotice(`${name} wurde endgültig gelöscht. Der Vorgang ist im Audit-Log protokolliert.`);
+                      void reloadEmployees();
+                    }}
+                  />
+                )}
+
                 {formError && (
                   <p role="alert" className="rounded-lg border border-[#f0c8bd] bg-[#fff2ed] px-3 py-2.5 text-sm text-[#9f422d]">
                     {formError}
@@ -690,9 +844,10 @@ export default function EmployeeManagement() {
                 </button>
                 <button
                   type="submit"
-                  className="min-h-11 rounded-lg bg-[#174c37] px-5 text-sm font-semibold text-white transition hover:bg-[#103d2b] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]"
+                  disabled={isSaving}
+                  className="min-h-11 rounded-lg bg-[#174c37] px-5 text-sm font-semibold text-white transition hover:bg-[#103d2b] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] disabled:cursor-wait disabled:opacity-70"
                 >
-                  Änderungen speichern
+                  {isSaving ? "Wird gespeichert …" : !draft.id && session.canManageAccounts ? "Mitarbeiter mit Konto anlegen" : "Änderungen speichern"}
                 </button>
               </div>
             </form>

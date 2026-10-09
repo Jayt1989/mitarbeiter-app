@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 type AuditParams = {
   actorUserId: string | null;
@@ -9,8 +10,11 @@ type AuditParams = {
   newValues?: unknown;
 };
 
-export async function recordAuditLog(params: AuditParams) {
-  await prisma.auditLog.create({
+export async function recordAuditLog(
+  params: AuditParams,
+  db: Pick<Prisma.TransactionClient, "auditLog"> = prisma,
+) {
+  await db.auditLog.create({
     data: {
       actorUserId: params.actorUserId,
       action: params.action,

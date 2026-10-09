@@ -34,7 +34,10 @@ export function describeShiftModel(employee: EmployeeShiftPlan) {
     : label;
 }
 
-type EmployeeShiftBase = { employeeId: string };
+type EmployeeShiftBase = {
+  employeeId: string;
+  overrides?: Readonly<Record<string, Shift>>;
+};
 
 export type EmployeeShiftPlan =
   | (EmployeeShiftBase & {
@@ -91,6 +94,8 @@ export function getShiftForDate(
   date: Date,
   employee: EmployeeShiftPlan,
 ): Shift | null {
+  const override = employee.overrides?.[dateKey(date)];
+  if (override) return override;
   if (employee.model === "individuell") {
     return employee.assignments[dateKey(date)] ?? null;
   }

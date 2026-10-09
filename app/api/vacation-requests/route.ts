@@ -6,6 +6,8 @@ import { employeeRelations, toEmployeeDto } from "@/lib/employee-mapper";
 import { labelToStatus, toVacationRequestDto } from "@/lib/vacation-mapper";
 import { getVacationWorkdays, requestsOverlap } from "@/app/urlaub/vacation-data";
 import { loadCalendarState } from "@/lib/calendar-server";
+import { createNotification } from "@/lib/notifications";
+import { vacationNotification } from "@/lib/notification-messages";
 
 export async function GET() {
   const context = await getAuthorizationContext();
@@ -115,19 +117,33 @@ export async function PATCH(request: Request) {
     id: string;
     status: "Genehmigt" | "Abgelehnt" | "Storniert";
   };
+  if (!["Genehmigt", "Abgelehnt", "Storniert"].includes(body.status)) {
+    return NextResponse.json({ error: "Ungültiger Urlaubsstatus" }, { status: 400 });
+  }
   const existing = await prisma.vacationRequest.findUnique({ where: { id: body.id } });
   if (!existing) {
     return NextResponse.json({ error: "Antrag nicht gefunden" }, { status: 404 });
   }
 
-  const updated = await prisma.vacationRequest.update({
-    where: { id: body.id },
-    data: {
-      status: labelToStatus[body.status],
-      decidedAt: new Date(),
-      approvedById: context.userId,
-    },
+  const status = labelToStatus[body.status];
+  if (existing.status === status) {
+    return NextResponse.json(toVacationRequestDto(existing));
+  }
+  const updated = await prisma.$transaction(async (tx) => {
+    const changed = await tx.vacationRequest.updateMany({
+      where: { id: existing.id, status: existing.status },
+      data: { status, decidedAt: new Date(), approvedById: context.userId },
+    });
+    if (changed.count === 0) return null;
+    const record = await tx.vacationRequest.findUniqueOrThrow({ where: { id: existing.id } });
+    if (status === "APPROVED" || status === "REJECTED") {
+      await createNotification(tx, vacationNotification(record, status));
+    }
+    return record;
   });
+  if (!updated) {
+    return NextResponse.json({ error: "Der Antrag wurde inzwischen geändert. Bitte neu laden." }, { status: 409 });
+  }
 
   await recordAuditLog({
     actorUserId: context.userId,

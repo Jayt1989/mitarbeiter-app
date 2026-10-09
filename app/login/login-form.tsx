@@ -14,7 +14,7 @@ export default function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
       {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
       <label className="block">
         <span className="mb-1.5 block text-xs font-medium text-[#526056]">
-          E-Mail oder Personalnummer
+          Personalnummer oder E-Mail
         </span>
         <input
           name="login"

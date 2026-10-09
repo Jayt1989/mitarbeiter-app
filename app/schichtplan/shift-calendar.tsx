@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
-import { employeeRepository } from "../mitarbeiter/repository";
 import { toEmployeeShiftPlan } from "../mitarbeiter/schedule";
 import { getShiftForDate, shiftModelOptions, type Shift } from "./rotation";
 import type { VacationRequest, VacationStatus } from "../urlaub/vacation-data";
-import { vacationRepository } from "../urlaub/vacation-repository";
-import { absenceTypes, sampleAbsences } from "../admin/staffing-data";
+import { absenceTypes } from "../admin/staffing-data";
 import { getAssignmentForDay, type TemporaryAssignment } from "../admin/assignments-data";
-import { assignmentRepository } from "../admin/assignments-repository";
+import type { ShiftPlanData } from "@/lib/shift-plan";
+import { shiftPlanRepository } from "./repository";
+import { berlinTodayKey } from "@/lib/calendar";
 import {
   absenceStyles,
   companyDayMarkerStyle,
@@ -58,14 +58,19 @@ function sortedActiveEmployees(employees: Employee[]) {
     );
 }
 
-export default function ShiftCalendar() {
-  const [employees, setEmployees] = useState(sampleEmployees);
-  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
+export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, canReview }: {
+  initialData: ShiftPlanData; ownEmployeeId: string | null; canSwap: boolean; canReview: boolean;
+}) {
+  const [employees, setEmployees] = useState(initialData.employees);
+  const [vacationRequests, setVacationRequests] = useState(initialData.vacations);
+  const [absences, setAbsences] = useState(initialData.absences);
+  const [planError, setPlanError] = useState("");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(
-    () => sortedActiveEmployees(sampleEmployees)[0]?.id ?? "",
+    () => initialData.employees.find((employee) => employee.id === ownEmployeeId)?.id
+      ?? sortedActiveEmployees(initialData.employees)[0]?.id ?? "",
   );
   const [selectedVacation, setSelectedVacation] = useState<VacationRequest | null>(null);
-  const [assignments, setAssignments] = useState<TemporaryAssignment[]>([]);
+  const [assignments, setAssignments] = useState<TemporaryAssignment[]>(initialData.assignments);
   const [year, setYear] = useState(() => currentBerlinYear());
   const [calendar, setCalendar] = useState<CalendarData>(defaultCalendarData);
   const months = getMonths(year);
@@ -85,46 +90,32 @@ export default function ShiftCalendar() {
   useEffect(() => {
     let isCurrent = true;
 
-    void assignmentRepository.loadAll().then((storedAssignments) => {
-      if (isCurrent) setAssignments(storedAssignments);
-    });
-
+    const refresh = () => {
+      void shiftPlanRepository.load().then((data) => {
+        if (!isCurrent) return;
+        setEmployees(data.employees);
+        setSelectedEmployeeId((currentId) =>
+          data.employees.some((employee) => employee.id === currentId) ? currentId
+            : data.employees.find((employee) => employee.id === ownEmployeeId)?.id
+              ?? data.employees[0]?.id ?? "",
+        );
+        setVacationRequests(data.vacations);
+        setAbsences(data.absences);
+        setAssignments(data.assignments);
+        setPlanError("");
+      }).catch((error: unknown) => {
+        if (isCurrent) setPlanError(error instanceof Error ? error.message : "Schichtplan konnte nicht aktualisiert werden.");
+      });
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("planning:changed", refresh);
     return () => {
       isCurrent = false;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("planning:changed", refresh);
     };
-  }, []);
-
-  useEffect(() => {
-    let isCurrent = true;
-
-    void employeeRepository.loadAll().then((storedEmployees) => {
-      if (!isCurrent || !storedEmployees) return;
-
-      const activeEmployees = sortedActiveEmployees(storedEmployees);
-      setEmployees(storedEmployees);
-      setSelectedEmployeeId((currentId) =>
-        activeEmployees.some((employee) => employee.id === currentId)
-          ? currentId
-          : activeEmployees[0]?.id ?? "",
-      );
-    });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isCurrent = true;
-
-    void vacationRepository.loadAll().then((requests) => {
-      if (isCurrent) setVacationRequests(requests);
-    });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
+  }, [ownEmployeeId]);
 
   const activeEmployees = sortedActiveEmployees(employees);
   const selectedEmployee = activeEmployees.find(
@@ -140,8 +131,7 @@ export default function ShiftCalendar() {
     ? vacationRequests.filter(
         (request) =>
           request.status !== "Storniert" &&
-          ((request.employeeId === selectedEmployee.id && selectedEmployee.permissions.ownVacation) ||
-            (request.employeeId !== selectedEmployee.id && selectedEmployee.permissions.otherVacations)),
+          request.employeeId === selectedEmployee.id,
       )
     : [];
 
@@ -156,20 +146,21 @@ export default function ShiftCalendar() {
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
               MA
             </span>
-            <span className="text-sm font-semibold tracking-[0.02em]">
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
               MITARBEITERPORTAL
             </span>
           </Link>
-          <Link
-            href="/mitarbeiter"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]"
-          >
-            Mitarbeiter
-          </Link>
+          <nav className="flex flex-wrap items-center justify-end gap-2" aria-label="Hauptnavigation">
+            {canSwap && <Link href="/schichttausch" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Schichttausch</Link>}
+            {canReview && <Link href="/admin/schichttausch" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Tausche prüfen</Link>}
+            <Link href="/mitarbeiter" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]">Mitarbeiter</Link>
+            <NotificationBell />
+          </nav>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 pb-12 pt-8 sm:px-8 sm:pt-12">
+        {planError && <p role="alert" className="mb-4 rounded-lg bg-[#fff0ec] p-3 text-sm text-[#a33e31]">{planError}</p>}
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold tracking-[0.15em] text-[#668071]">
@@ -203,6 +194,14 @@ export default function ShiftCalendar() {
         <div className="mt-5">
           <YearSelector year={year} onChange={setYear} />
         </div>
+        {canSwap && selectedEmployeeId === ownEmployeeId && (
+          <div className="mt-4">
+            <Link href="/schichttausch" className="inline-flex min-h-11 items-center rounded-lg bg-[#174c37] px-4 py-2 text-sm font-semibold text-white hover:bg-[#103d2b]">
+              Schichttausch anfragen
+            </Link>
+            <p className="mt-2 text-xs text-[#68766d]">Klicke alternativ auf eine eigene Schicht, um deren Datum direkt zu übernehmen.</p>
+          </div>
+        )}
 
         {selectedEmployee && employeePlan ? (
           <>
@@ -340,7 +339,7 @@ export default function ShiftCalendar() {
                             })[0]
                         : undefined;
                       const absenceOnDay = !vacationOnDay && shift && shift !== "Frei"
-                        ? sampleAbsences.find(
+                        ? absences.find(
                             (absence) =>
                               absence.employeeId === selectedEmployee.id &&
                               absence.startDate <= dateKey &&
@@ -405,6 +404,8 @@ export default function ShiftCalendar() {
                         marks.holiday ? holidayMarkerStyle : ""
                       } ${marks.companyDays.length > 0 ? companyDayMarkerStyle : ""}`;
 
+                      const canRequestDay = canSwap && selectedEmployee.id === ownEmployeeId &&
+                        shift && shift !== "Frei" && dateKey >= berlinTodayKey();
                       return vacationOnDay ? (
                         <button
                           key={day}
@@ -418,6 +419,14 @@ export default function ShiftCalendar() {
                         >
                           {cellContent}
                         </button>
+                      ) : canRequestDay ? (
+                        <Link key={day} role="gridcell" href={`/schichttausch?date=${dateKey}`}
+                          aria-label={`${accessibleLabel}. Schichttausch anfragen`}
+                          title="Schichttausch anfragen" data-plan-shift={shift ?? ""}
+                          className={`${cellClass} focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#174c37]`}>
+                          {cellContent}
+                          <span className="text-[8px] underline">Tausch</span>
+                        </Link>
                       ) : (
                         <div
                           key={day}

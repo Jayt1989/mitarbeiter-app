@@ -1,4 +1,6 @@
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
+import NotificationSummary from "@/app/components/notification-summary";
 import type { ReactNode } from "react";
 import type { DashboardDay, PersonalDashboardData } from "@/lib/personal-dashboard";
 import { absenceStyles, companyDayMarkerStyle, holidayMarkerStyle, shiftStyles } from "../schichtplan/shift-styles";
@@ -49,10 +51,13 @@ function dayStyle(day: DashboardDay) {
 export default function PersonalDashboard({ data }: { data: PersonalDashboardData }) {
   const { employee, permissions } = data;
   const quickLinks = [
+    permissions.performance && { href: "/leistung", title: "Leistung erfassen", text: "Menge und Arbeitszeit eintragen" },
+    permissions.performanceReport && { href: "/admin/leistung", title: "Leistungsauswertung", text: "Erfasste Leistungen auswerten" },
     permissions.yearPlan && { href: "/schichtplan", title: "Jahres-Schichtplan", text: "Alle Dienste des Jahres" },
     permissions.requestVacation && { href: "/urlaub?antrag=neu", title: "Urlaub beantragen", text: "Neuen Antrag stellen" },
     permissions.ownVacation && { href: "/urlaub#antraege-eigen-titel", title: "Meine Urlaubsanträge", text: "Status deiner Anträge" },
     permissions.qualifications && { href: "#meine-qualifikationen", title: "Meine Qualifikationen", text: "Stufen im Überblick" },
+    permissions.shiftSwap && { href: "/schichttausch", title: "Schichttausch", text: "Anfragen stellen und beantworten" },
     permissions.shiftPlan && { href: `/export/druck?type=year&year=${data.todayKey.slice(0, 4)}&print=1`, title: "Jahresplan als PDF", text: "Eigener Plan zum Drucken", external: true },
     permissions.shiftPlan && { href: `/api/export/excel?type=year&year=${data.todayKey.slice(0, 4)}`, title: "Jahresplan als Excel", text: "Eigener Plan als .xlsx", external: true },
   ].filter((entry): entry is { href: string; title: string; text: string; external?: boolean } => Boolean(entry));
@@ -70,7 +75,7 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
             </span>
             <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">MITARBEITERPORTAL</span>
           </Link>
-          <nav className="flex items-center gap-1 sm:gap-2" aria-label="Hauptnavigation">
+          <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Hauptnavigation">
             {permissions.yearPlan && (
               <Link href="/schichtplan" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]">
                 Schichtplan
@@ -81,6 +86,12 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
                 Urlaub
               </Link>
             )}
+            {permissions.performance && (
+              <Link href="/leistung" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]">
+                Leistung
+              </Link>
+            )}
+            <NotificationBell />
           </nav>
         </div>
       </header>
@@ -99,31 +110,7 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
           </dl>
         </section>
 
-        <section
-          aria-labelledby="benachrichtigungen-titel"
-          className="mt-4 flex items-start gap-3 rounded-xl border border-[#e0e7e0] bg-white px-4 py-3 sm:px-5"
-        >
-          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#edf3ee] text-[#41634f]">
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z" />
-              <path d="M10 19a2 2 0 0 0 4 0" />
-            </svg>
-          </span>
-          <div className="min-w-0">
-            <h2 id="benachrichtigungen-titel" className="text-sm font-semibold">Benachrichtigungen</h2>
-            {data.notifications.length === 0 ? (
-              <p className="mt-0.5 text-xs text-[#77847b]">Keine neuen Benachrichtigungen.</p>
-            ) : (
-              <ul className="mt-1 space-y-1">
-                {data.notifications.map((notification) => (
-                  <li key={notification.id} className="text-xs text-[#526056]">
-                    <span className="font-semibold">{notification.title}</span> · {notification.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
+        <NotificationSummary />
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {data.today && (

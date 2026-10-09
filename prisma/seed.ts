@@ -8,6 +8,7 @@ import { toEmployeeShiftPlan } from "../app/mitarbeiter/schedule";
 import { sampleAreaConfiguration } from "../app/admin/areas-data";
 import { sampleAbsences } from "../app/admin/staffing-data";
 import { sampleVacationRequests } from "../app/urlaub/vacation-data";
+import { upsertPermissions, upsertRoles, syncRolePermissions, grantAllPermissionsToAdminEmployees, type RoleCode } from "./permission-sync";
 
 const prisma = new PrismaClient();
 
@@ -18,35 +19,7 @@ const shiftValues: Record<string, ShiftCode> = {
   Frei: ShiftCode.OFF,
 };
 
-const roleDefinitions = [
-  { code: "EMPLOYEE", name: "Mitarbeiter" },
-  { code: "FOREMAN", name: "Vorarbeiter" },
-  { code: "ADMIN", name: "Admin" },
-] as const;
-
-const defaultRolePermissions: Record<string, Set<string>> = {
-  EMPLOYEE: new Set([
-    "ownShiftPlan",
-    "requestVacation",
-    "ownVacation",
-    "ownQualifications",
-  ]),
-  FOREMAN: new Set([
-    "ownShiftPlan",
-    "teamShiftPlan",
-    "requestVacation",
-    "ownVacation",
-    "otherVacations",
-    "viewEmployees",
-    "editShiftPlans",
-    "recordAbsence",
-    "viewQualifications",
-    "ownQualifications",
-  ]),
-  ADMIN: new Set(permissionOptions.map((permission) => permission.id)),
-};
-
-function roleCode(role: Employee["role"]) {
+function roleCode(role: Employee["role"]): RoleCode {
   if (role === "Admin") return "ADMIN";
   if (role === "Vorarbeiter") return "FOREMAN";
   return "EMPLOYEE";
@@ -56,52 +29,25 @@ function dateAtUtc(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
+/** Bootstrap-Admin; wird nur angelegt, wenn er fehlt. */
+const bootstrapAdminId = "employee-1001";
+
 async function main() {
+  // Demo-/Testmitarbeiter (MA-1002 … MA-1005) nur auf ausdrücklichen Wunsch anlegen.
+  const includeDemoData = process.env.SEED_DEMO_DATA === "true";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD;
   const staffPassword = process.env.SEED_USER_PASSWORD;
-  if (!adminPassword || !staffPassword) {
-    throw new Error("SEED_ADMIN_PASSWORD und SEED_USER_PASSWORD müssen vor dem Seed gesetzt sein.");
+  if (!adminPassword || (includeDemoData && !staffPassword)) {
+    throw new Error(
+      includeDemoData
+        ? "SEED_ADMIN_PASSWORD und SEED_USER_PASSWORD müssen vor dem Seed gesetzt sein."
+        : "SEED_ADMIN_PASSWORD muss vor dem Seed gesetzt sein.",
+    );
   }
 
-  const roles = new Map<string, { id: string }>();
-  for (const role of roleDefinitions) {
-    const record = await prisma.role.upsert({
-      where: { code: role.code },
-      update: { name: role.name },
-      create: role,
-    });
-    roles.set(role.code, record);
-  }
-
-  const permissions = new Map<string, { id: string }>();
-  for (const permission of permissionOptions) {
-    const record = await prisma.permission.upsert({
-      where: { key: permission.id },
-      update: { label: permission.label },
-      create: { key: permission.id, label: permission.label },
-    });
-    permissions.set(permission.id, record);
-  }
-
-  for (const role of roleDefinitions) {
-    const roleRecord = roles.get(role.code)!;
-    for (const permission of permissionOptions) {
-      await prisma.rolePermission.upsert({
-        where: {
-          roleId_permissionId: {
-            roleId: roleRecord.id,
-            permissionId: permissions.get(permission.id)!.id,
-          },
-        },
-        update: {},
-        create: {
-          roleId: roleRecord.id,
-          permissionId: permissions.get(permission.id)!.id,
-          allowed: defaultRolePermissions[role.code].has(permission.id),
-        },
-      });
-    }
-  }
+  const roles = await upsertRoles(prisma);
+  const permissions = await upsertPermissions(prisma);
+  await syncRolePermissions(prisma, roles, permissions);
 
   for (const model of shiftModelOptions) {
     const rotationOrder = model.id === "3-schicht"
@@ -153,24 +99,29 @@ async function main() {
     departments.set(area.id, record);
   }
 
-  const employees = new Map<string, { id: string; roleCode: string; permissions: Employee["permissions"] }>();
-  const seededUsers = new Map<string, { id: string }>();
-  for (const employee of sampleEmployees) {
+  // Endgültig gelöschte Mitarbeiter (Audit-Log „employee.delete“) werden nie wieder angelegt.
+  const deletedIds = new Set(
+    (await prisma.auditLog.findMany({
+      where: { action: "employee.delete", entityType: "Employee", entityId: { in: sampleEmployees.map((entry) => entry.id) } },
+      select: { entityId: true },
+    })).map((row) => row.entityId),
+  );
+  const candidates = sampleEmployees.filter(
+    (employee) => (employee.id === bootstrapAdminId || includeDemoData) && !deletedIds.has(employee.id),
+  );
+
+  // Bereits vorhandene Mitarbeiter/Konten werden nicht überschrieben (keine Passwort-, Status- oder Stammdaten-Resets).
+  const createdEmployees: Employee[] = [];
+  for (const employee of candidates) {
     const role = roleCode(employee.role);
-    const record = await prisma.employee.upsert({
-      where: { id: employee.id },
-      update: {
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        personnelNumber: employee.personnelNumber,
-        email: employee.email,
-        isActive: employee.isActive,
-        annualLeaveAllowance: employee.annualLeaveAllowance,
-        carryOverLeaveDays: employee.carryOverLeaveDays,
-        shiftModel: { connect: { code: employee.shiftModel } },
-        shiftGroup: { connect: { code: employee.shiftGroup === "Keine Gruppe" ? "NONE" : employee.shiftGroup.slice(-1) } },
-      },
-      create: {
+    const exists = await prisma.employee.findFirst({
+      where: { OR: [{ id: employee.id }, { personnelNumber: employee.personnelNumber }] },
+      select: { id: true },
+    }) ?? await prisma.user.findUnique({ where: { login: employee.personnelNumber }, select: { id: true } });
+    if (exists) continue;
+
+    await prisma.employee.create({
+      data: {
         id: employee.id,
         firstName: employee.firstName,
         lastName: employee.lastName,
@@ -183,60 +134,37 @@ async function main() {
         shiftGroup: { connect: { code: employee.shiftGroup === "Keine Gruppe" ? "NONE" : employee.shiftGroup.slice(-1) } },
       },
     });
-    employees.set(employee.id, { id: record.id, roleCode: role, permissions: employee.permissions });
+    createdEmployees.push(employee);
 
     if (employee.areaId) {
-      const department = departments.get(employee.areaId)!;
-      await prisma.employeeDepartment.updateMany({
-        where: { employeeId: employee.id, isPrimary: true, departmentId: { not: department.id } },
-        data: { isPrimary: false },
-      });
-      await prisma.employeeDepartment.upsert({
-        where: { employeeId_departmentId: { employeeId: employee.id, departmentId: department.id } },
-        update: { isPrimary: true },
-        create: { employeeId: employee.id, departmentId: department.id, isPrimary: true },
+      await prisma.employeeDepartment.create({
+        data: { employeeId: employee.id, departmentId: departments.get(employee.areaId)!.id, isPrimary: true },
       });
     }
 
-    for (const permission of permissionOptions) {
-      await prisma.employeePermission.upsert({
-        where: {
-          employeeId_permissionId: {
-            employeeId: employee.id,
-            permissionId: permissions.get(permission.id)!.id,
-          },
-        },
-        update: {},
-        create: {
-          employeeId: employee.id,
-          permissionId: permissions.get(permission.id)!.id,
-          allowed: employee.permissions[permission.id],
-        },
-      });
-    }
+    await prisma.employeePermission.createMany({
+      data: permissionOptions.map((permission) => ({
+        employeeId: employee.id,
+        permissionId: permissions.get(permission.id)!.id,
+        allowed: role === "ADMIN" ? true : employee.permissions[permission.id],
+      })),
+      skipDuplicates: true,
+    });
 
-    const passwordHash = await hash(role === "ADMIN" ? adminPassword : staffPassword, 12);
-    const user = await prisma.user.upsert({
-      where: { login: employee.personnelNumber },
-      update: {
-        email: employee.email.toLowerCase(),
-        passwordHash,
-        active: employee.isActive,
-        role: { connect: { code: role } },
-        employee: { connect: { id: employee.id } },
-      },
-      create: {
+    await prisma.user.create({
+      data: {
         login: employee.personnelNumber,
         email: employee.email.toLowerCase(),
-        passwordHash,
+        passwordHash: await hash(role === "ADMIN" ? adminPassword : staffPassword!, 12),
         active: employee.isActive,
         role: { connect: { code: role } },
         employee: { connect: { id: employee.id } },
       },
     });
-    seededUsers.set(employee.id, user);
-
   }
+  const createdIds = new Set(createdEmployees.map((employee) => employee.id));
+
+  await grantAllPermissionsToAdminEmployees(prisma, permissions);
 
   const qualificationDefinitions = [
     { code: "PACKAGING", name: "Verpackung" },
@@ -266,19 +194,12 @@ async function main() {
     qualificationIds.set(qualification.code, record);
   }
 
-  for (const employee of sampleEmployees) {
+  for (const employee of createdEmployees) {
     for (const [sampleQualificationId, level] of Object.entries(employee.qualifications ?? {})) {
       const code = sampleQualificationIdToCode[sampleQualificationId];
       if (!code) continue;
-      await prisma.employeeQualification.upsert({
-        where: {
-          employeeId_qualificationId: {
-            employeeId: employee.id,
-            qualificationId: qualificationIds.get(code)!.id,
-          },
-        },
-        update: { level },
-        create: { employeeId: employee.id, qualificationId: qualificationIds.get(code)!.id, level },
+      await prisma.employeeQualification.create({
+        data: { employeeId: employee.id, qualificationId: qualificationIds.get(code)!.id, level },
       });
     }
   }
@@ -307,10 +228,10 @@ async function main() {
   }
 
   const currentYear = 2026;
-  for (const employee of sampleEmployees) {
+  for (const employee of createdEmployees) {
     await prisma.vacationAccount.upsert({
       where: { employeeId_year: { employeeId: employee.id, year: currentYear } },
-      update: { annualAllowance: employee.annualLeaveAllowance, carryOverDays: employee.carryOverLeaveDays },
+      update: {},
       create: {
         employeeId: employee.id,
         year: currentYear,
@@ -320,8 +241,9 @@ async function main() {
     });
   }
 
-  const adminUser = seededUsers.get("employee-1001")!;
-  for (const request of sampleVacationRequests) {
+  // Beispiel-Urlaubsanträge und -Abwesenheiten nur für in diesem Lauf neu angelegte Demo-Mitarbeiter.
+  const adminUser = await prisma.user.findUnique({ where: { login: "MA-1001" }, select: { id: true } });
+  for (const request of includeDemoData ? sampleVacationRequests.filter((entry) => createdIds.has(entry.employeeId)) : []) {
     await prisma.vacationRequest.upsert({
       where: { id: request.id },
       update: {},
@@ -340,12 +262,12 @@ async function main() {
       comment: request.comment,
       requestedAt: new Date(request.requestedAt),
       decidedAt: request.decidedAt ? new Date(request.decidedAt) : null,
-      approvedById: request.status === "Genehmigt" || request.status === "Abgelehnt" ? adminUser.id : null,
+      approvedById: request.status === "Genehmigt" || request.status === "Abgelehnt" ? adminUser?.id ?? null : null,
       },
     });
   }
 
-  for (const absence of sampleAbsences) {
+  for (const absence of includeDemoData ? sampleAbsences.filter((entry) => createdIds.has(entry.employeeId)) : []) {
     const seedKey = `sample-${absence.employeeId}-${absence.startDate}-${absence.type}`;
     await prisma.absence.upsert({
       where: { seedKey },
@@ -363,13 +285,13 @@ async function main() {
       status: absence.approval === "Genehmigt" ? AbsenceStatus.APPROVED : AbsenceStatus.RECORDED,
       startDate: dateAtUtc(absence.startDate),
       endDate: dateAtUtc(absence.endDate),
-      recordedById: adminUser.id,
+      recordedById: adminUser?.id ?? null,
       },
     });
   }
 
   const assignments = [];
-  for (const employee of sampleEmployees.filter((entry) => entry.isActive)) {
+  for (const employee of createdEmployees.filter((entry) => entry.isActive)) {
     const plan = toEmployeeShiftPlan(employee);
     for (let dayOffset = 0; dayOffset < 365; dayOffset += 1) {
       const date = dateAtUtc("2026-01-01");
@@ -387,7 +309,11 @@ async function main() {
   }
   await prisma.shiftAssignment.createMany({ data: assignments, skipDuplicates: true });
 
-  console.log(`Seeded ${employees.size} employees, ${qualificationDefinitions.length} qualifications and ${sampleVacationRequests.length} vacation requests.`);
+  console.log(
+    `Seed abgeschlossen: ${createdEmployees.length} Mitarbeiter neu angelegt` +
+      (createdEmployees.length ? ` (${createdEmployees.map((entry) => entry.personnelNumber).join(", ")})` : "") +
+      `, vorhandene Mitarbeiter unverändert, ${deletedIds.size} gelöschte übersprungen. Demo-Daten: ${includeDemoData ? "ja" : "nein"}.`,
+  );
 }
 
 main()

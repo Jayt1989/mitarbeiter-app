@@ -3,6 +3,7 @@ import type {
   TemporaryAssignment,
   TemporaryAssignmentInput,
 } from "./assignments-data";
+import { refreshNotifications } from "@/app/components/notification-events";
 
 type MutationResult = {
   assignment: TemporaryAssignment;
@@ -19,7 +20,9 @@ async function send(method: "POST" | "PATCH", body: unknown): Promise<MutationRe
     const error = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(error?.error ?? "Der Einsatz konnte nicht gespeichert werden.");
   }
-  return (await response.json()) as MutationResult;
+  const result = (await response.json()) as MutationResult;
+  refreshNotifications();
+  return result;
 }
 
 export const assignmentRepository = {

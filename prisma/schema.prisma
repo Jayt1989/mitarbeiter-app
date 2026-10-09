@@ -40,6 +40,103 @@ enum AssignmentSource {
   MANUAL
 }
 
+enum NotificationType {
+  VACATION_APPROVED
+  VACATION_REJECTED
+  SHIFT_CHANGED
+  ASSIGNMENT_CREATED
+  ASSIGNMENT_UPDATED
+  ASSIGNMENT_CANCELLED
+  QUALIFICATION_ADDED
+  SWAP_REQUESTED
+  SWAP_PARTNER_CONFIRMED
+  SWAP_PARTNER_REJECTED
+  SWAP_APPROVED
+  SWAP_REJECTED
+  SWAP_CANCELLED
+}
+
+enum ShiftSwapStatus {
+  ANGEFRAGT
+  PARTNER_BESTAETIGT
+  PARTNER_ABGELEHNT
+  GENEHMIGT
+  ABGELEHNT
+  STORNIERT
+}
+
+model ShiftSwapRequest {
+  id                     String          @id @default(cuid())
+  requesterId            String
+  partnerId              String
+  date                   DateTime        @db.Date
+  requesterOriginalShift ShiftCode
+  partnerOriginalShift   ShiftCode
+  requesterArea          String?
+  partnerArea            String?
+  status                 ShiftSwapStatus @default(ANGEFRAGT)
+  comment                String?
+  partnerDecidedAt       DateTime?
+  approvedById           String?
+  approvedAt             DateTime?
+  rejectedAt             DateTime?
+  cancelledAt            DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  requester  Employee @relation("SwapRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  partner    Employee @relation("SwapPartner", fields: [partnerId], references: [id], onDelete: Restrict)
+  approvedBy User?    @relation("SwapReviewer", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([requesterId, date, status])
+  @@index([partnerId, date, status])
+  @@index([status, createdAt])
+}
+
+enum PerformanceArea {
+  PICKING
+  PACKING
+}
+
+/// Vom Mitarbeiter selbst erfasste Leistung einer Schicht (Datum und Schicht werden serverseitig ermittelt).
+model PerformanceEntry {
+  id              String          @id @default(cuid())
+  employeeId      String
+  workDate        DateTime        @db.Date
+  shift           ShiftCode
+  area            PerformanceArea
+  workstation     String
+  quantity        Int
+  durationMinutes Int
+  note            String?
+  createdById     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("PerformanceRecorder", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, workDate])
+  @@index([workDate, area, workstation])
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  employeeId String
+  title      String
+  message    String
+  type       NotificationType
+  read       Boolean          @default(false)
+  link       String?
+  createdAt  DateTime         @default(now())
+  readAt     DateTime?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, createdAt, id])
+  @@index([employeeId, read])
+}
+
 enum CompanyDayType {
   CLOSURE
   INVENTORY
@@ -73,61 +170,70 @@ model CompanyDay {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  login        String   @unique
-  email        String   @unique
-  passwordHash String
-  active       Boolean  @default(true)
-  roleId       String
-  employeeId   String?  @unique
-  lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  login              String    @unique
+  email              String?   @unique
+  passwordHash       String
+  // Bestehende Konten bleiben unberührt (false); neue Konten und Admin-Resets setzen true.
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
+  active             Boolean   @default(true)
+  roleId             String
+  employeeId         String?   @unique
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  role             Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  employee         Employee?        @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  approvedVacations VacationRequest[] @relation("VacationApprover")
-  createdAbsences  Absence[]        @relation("AbsenceRecorder")
-  auditLogs        AuditLog[]
+  role                        Role                  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  employee                    Employee?             @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  approvedVacations           VacationRequest[]     @relation("VacationApprover")
+  createdAbsences             Absence[]             @relation("AbsenceRecorder")
+  auditLogs                   AuditLog[]
   createdTemporaryAssignments TemporaryAssignment[] @relation("TemporaryAssignmentCreator")
   createdCompanyDays          CompanyDay[]          @relation("CompanyDayCreator")
+  reviewedShiftSwaps          ShiftSwapRequest[]    @relation("SwapReviewer")
+  recordedPerformance         PerformanceEntry[]    @relation("PerformanceRecorder")
 
   @@index([active, roleId])
 }
 
 model Employee {
-  id                  String   @id @default(cuid())
-  firstName           String
-  lastName            String
-  personnelNumber     String   @unique
-  email               String   @unique
-  isActive            Boolean  @default(true)
-  annualLeaveAllowance Int     @default(30)
-  carryOverLeaveDays  Int      @default(0)
-  shiftModelId        String
-  shiftGroupId        String
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  firstName            String
+  lastName             String
+  personnelNumber      String   @unique
+  email                String?  @unique
+  isActive             Boolean  @default(true)
+  annualLeaveAllowance Int      @default(30)
+  carryOverLeaveDays   Int      @default(0)
+  shiftModelId         String
+  shiftGroupId         String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  user                  User?
-  shiftModel            ShiftModel            @relation(fields: [shiftModelId], references: [id], onDelete: Restrict)
-  shiftGroup            ShiftGroup            @relation(fields: [shiftGroupId], references: [id], onDelete: Restrict)
-  departments           EmployeeDepartment[]
-  permissions           EmployeePermission[]
-  shiftAssignments      ShiftAssignment[]
-  absences              Absence[]
-  vacationRequests      VacationRequest[]
-  vacationAccounts      VacationAccount[]
-  qualifications        EmployeeQualification[]
-  temporaryAssignments  TemporaryAssignment[]
+  user                 User?
+  shiftModel           ShiftModel              @relation(fields: [shiftModelId], references: [id], onDelete: Restrict)
+  shiftGroup           ShiftGroup              @relation(fields: [shiftGroupId], references: [id], onDelete: Restrict)
+  departments          EmployeeDepartment[]
+  permissions          EmployeePermission[]
+  shiftAssignments     ShiftAssignment[]
+  absences             Absence[]
+  vacationRequests     VacationRequest[]
+  vacationAccounts     VacationAccount[]
+  qualifications       EmployeeQualification[]
+  temporaryAssignments TemporaryAssignment[]
+  notifications        Notification[]
+  requestedShiftSwaps  ShiftSwapRequest[]      @relation("SwapRequester")
+  receivedShiftSwaps   ShiftSwapRequest[]      @relation("SwapPartner")
+  performanceEntries   PerformanceEntry[]
 
   @@index([lastName, firstName])
   @@index([isActive, shiftModelId, shiftGroupId])
 }
 
 model Role {
-  id          String @id @default(cuid())
-  code        String @unique
+  id          String           @id @default(cuid())
+  code        String           @unique
   name        String
   description String?
   users       User[]
@@ -137,8 +243,8 @@ model Role {
 }
 
 model Permission {
-  id          String @id @default(cuid())
-  key         String @unique
+  id          String               @id @default(cuid())
+  key         String               @unique
   label       String
   description String?
   roles       RolePermission[]
@@ -170,32 +276,32 @@ model EmployeePermission {
 }
 
 model ShiftModel {
-  id             String     @id @default(cuid())
-  code           String     @unique
-  name           String
-  rotationOrder  ShiftCode[]
+  id              String      @id @default(cuid())
+  code            String      @unique
+  name            String
+  rotationOrder   ShiftCode[]
   workingWeekdays Int[]
-  active         Boolean    @default(true)
-  employees      Employee[]
+  active          Boolean     @default(true)
+  employees       Employee[]
 }
 
 model ShiftGroup {
-  id         String    @id @default(cuid())
-  code       String    @unique
+  id         String     @id @default(cuid())
+  code       String     @unique
   name       String
   startShift ShiftCode
-  anchorDate DateTime  @db.Date
-  active     Boolean   @default(true)
+  anchorDate DateTime   @db.Date
+  active     Boolean    @default(true)
   employees  Employee[]
 }
 
 model Department {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  name        String
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   employees            EmployeeDepartment[]
   minimumStaffing      MinimumStaffing[]
@@ -205,10 +311,10 @@ model Department {
 }
 
 model EmployeeDepartment {
-  employeeId  String
+  employeeId   String
   departmentId String
-  isPrimary   Boolean  @default(false)
-  assignedAt  DateTime @default(now())
+  isPrimary    Boolean  @default(false)
+  assignedAt   DateTime @default(now())
 
   employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
@@ -255,19 +361,19 @@ model ShiftAssignment {
 }
 
 model Absence {
-  id            String       @id @default(cuid())
-  seedKey      String?      @unique
-  employeeId    String
-  type          AbsenceType
-  status        AbsenceStatus @default(RECORDED)
-  startDate     DateTime     @db.Date
-  endDate       DateTime     @db.Date
-  recordedById  String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id           String        @id @default(cuid())
+  seedKey      String?       @unique
+  employeeId   String
+  type         AbsenceType
+  status       AbsenceStatus @default(RECORDED)
+  startDate    DateTime      @db.Date
+  endDate      DateTime      @db.Date
+  recordedById String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  recordedBy User?   @relation("AbsenceRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordedBy User?    @relation("AbsenceRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
 
   @@index([employeeId, startDate, endDate])
   @@index([type, status, startDate])
@@ -294,13 +400,13 @@ model VacationRequest {
 }
 
 model VacationAccount {
-  id                   String   @id @default(cuid())
-  employeeId           String
-  year                 Int
-  annualAllowance      Int
-  carryOverDays        Int      @default(0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id              String   @id @default(cuid())
+  employeeId      String
+  year            Int
+  annualAllowance Int
+  carryOverDays   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -323,11 +429,11 @@ model MinimumStaffing {
 }
 
 model Qualification {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  name        String
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 
   employees       EmployeeQualification[]
   minimumStaffing MinimumStaffing[]

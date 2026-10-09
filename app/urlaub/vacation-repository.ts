@@ -3,6 +3,7 @@ import {
   vacationStatuses,
   type VacationRequest,
 } from "./vacation-data";
+import { refreshNotifications } from "@/app/components/notification-events";
 
 const storageKey = "mitarbeiter-app.urlaubsantraege.v1";
 
@@ -85,6 +86,7 @@ export const vacationRepository: VacationRepository = {
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
       throw new Error(body?.error ?? "Die Entscheidung konnte nicht gespeichert werden.");
     }
+    refreshNotifications();
     return (await response.json()) as VacationRequest;
   },
 

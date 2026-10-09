@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import NotificationBell from "@/app/components/notification-bell";
 import { staffedShifts } from "./staffing";
 import { areaRepository } from "./areas-repository";
 import { sampleAreaConfiguration, type AreaConfiguration, type ShiftMinimum, type WorkArea } from "./areas-data";
@@ -133,9 +134,12 @@ export default function AreaSettings() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-8">
           <Link href="/admin" className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]">
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="text-sm font-semibold tracking-[0.02em]">MITARBEITERPORTAL</span>
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">MITARBEITERPORTAL</span>
           </Link>
-          <Link href="/admin" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Zurück zum Admin</Link>
+          <nav className="flex items-center gap-2" aria-label="Hauptnavigation">
+            <Link href="/admin" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Zurück zum Admin</Link>
+            <NotificationBell />
+          </nav>
         </div>
       </header>
 

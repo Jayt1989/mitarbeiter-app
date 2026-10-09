@@ -7,6 +7,7 @@ declare module "next-auth" {
       role: string;
       employeeId: string | null;
       permissions: Record<string, boolean>;
+      mustChangePassword: boolean;
     } & DefaultSession["user"];
   }
 
@@ -14,6 +15,8 @@ declare module "next-auth" {
     role: string;
     employeeId: string | null;
     permissions: Record<string, boolean>;
+    mustChangePassword: boolean;
+    passwordChangedAt: number | null;
   }
 }
 
@@ -22,5 +25,7 @@ declare module "next-auth/jwt" {
     role?: string;
     employeeId?: string | null;
     permissions?: Record<string, boolean>;
+    mustChangePassword?: boolean;
+    passwordChangedAt?: number | null;
   }
 }

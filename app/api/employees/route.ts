@@ -4,11 +4,27 @@ import { getAuthorizationContext, hasPermission } from "@/lib/authorization";
 import { recordAuditLog } from "@/lib/audit";
 import {
   employeeRelations,
-  shiftGroupLabelToCode,
   toEmployeeDto,
   toShiftCode,
+  fromShiftCode,
 } from "@/lib/employee-mapper";
-import { permissionOptions, type Employee } from "@/app/mitarbeiter/data";
+import type { Employee } from "@/app/mitarbeiter/data";
+import {
+  accountErrorResponse,
+  assertNoSelfLockout,
+  assertUniqueIdentity,
+  canManageAccounts,
+  createEmployeeWithAccount,
+  normalizeEmail,
+  syncLinkedUser,
+  writeEmployeeCore,
+} from "@/lib/user-accounts";
+import { toEmployeeShiftPlan } from "@/app/mitarbeiter/schedule";
+import { getShiftForDate } from "@/app/schichtplan/rotation";
+import { createNotification } from "@/lib/notifications";
+import { shiftNotification } from "@/lib/notification-messages";
+import { isValidDateKey } from "@/app/admin/assignments-data";
+import { deletedEmployeeIds } from "@/lib/employee-deletion";
 
 export async function GET() {
   const context = await getAuthorizationContext();
@@ -36,83 +52,85 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
 
-  const payload = (await request.json()) as Employee[];
+  const payload = (await request.json().catch(() => null)) as Employee[] | null;
+  if (!Array.isArray(payload) || payload.some((employee) =>
+    !employee || typeof employee !== "object" ||
+    typeof employee.firstName !== "string" || !employee.firstName.trim() ||
+    typeof employee.lastName !== "string" || !employee.lastName.trim() ||
+    typeof employee.personnelNumber !== "string" || !employee.personnelNumber.trim() ||
+    (employee.email !== undefined && employee.email !== null && typeof employee.email !== "string")
+  )) {
+    return NextResponse.json({ error: "Ungültige Mitarbeiterdaten" }, { status: 400 });
+  }
+  if (payload.some((employee) =>
+    Object.entries(employee.individualAssignments ?? {}).some(([date, shift]) =>
+      !isValidDateKey(date) || !["Früh", "Spät", "Nacht", "Frei"].includes(shift),
+    ),
+  )) {
+    return NextResponse.json({ error: "Ungültige manuelle Schichtzuweisung" }, { status: 400 });
+  }
+
+  // Eine veraltete Liste (z. B. zweiter Browser-Tab) darf gelöschte Mitarbeiter nicht neu anlegen.
+  const payloadIds = payload.map((employee) => employee.id).filter((id): id is string => !!id);
+  const existingIds = new Set(
+    (await prisma.employee.findMany({ where: { id: { in: payloadIds } }, select: { id: true } })).map((row) => row.id),
+  );
+  const deletedIds = await deletedEmployeeIds(prisma, payloadIds.filter((id) => !existingIds.has(id)));
 
   for (const employee of payload) {
+    if (employee.id && deletedIds.has(employee.id)) continue;
     const existing = employee.id
       ? await prisma.employee.findUnique({ where: { id: employee.id }, include: employeeRelations })
       : null;
     const before = existing ? toEmployeeDto(existing) : null;
 
-    const record = await prisma.employee.upsert({
-      where: { id: employee.id || "__new__" },
-      update: {
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        personnelNumber: employee.personnelNumber,
-        email: employee.email,
-        isActive: employee.isActive,
-        annualLeaveAllowance: employee.annualLeaveAllowance,
-        carryOverLeaveDays: employee.carryOverLeaveDays,
-        shiftModel: { connect: { code: employee.shiftModel } },
-        shiftGroup: { connect: { code: shiftGroupLabelToCode(employee.shiftGroup) } },
-      },
-      create: {
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        personnelNumber: employee.personnelNumber,
-        email: employee.email,
-        isActive: employee.isActive,
-        annualLeaveAllowance: employee.annualLeaveAllowance,
-        carryOverLeaveDays: employee.carryOverLeaveDays,
-        shiftModel: { connect: { code: employee.shiftModel } },
-        shiftGroup: { connect: { code: shiftGroupLabelToCode(employee.shiftGroup) } },
-      },
-    });
-
-    if (employee.areaId) {
-      await prisma.employeeDepartment.updateMany({
-        where: { employeeId: record.id, isPrimary: true, departmentId: { not: employee.areaId } },
-        data: { isPrimary: false },
+    let record: Awaited<ReturnType<typeof writeEmployeeCore>>;
+    try {
+      assertNoSelfLockout(context, employee);
+      await assertUniqueIdentity(prisma, {
+        personnelNumber: employee.personnelNumber.trim(),
+        email: normalizeEmail(employee.email),
+        employeeId: employee.id || undefined,
+        userId: existing?.user?.id,
       });
-      await prisma.employeeDepartment.upsert({
-        where: { employeeId_departmentId: { employeeId: record.id, departmentId: employee.areaId } },
-        update: { isPrimary: true },
-        create: { employeeId: record.id, departmentId: employee.areaId, isPrimary: true },
-      });
-    } else {
-      await prisma.employeeDepartment.updateMany({
-        where: { employeeId: record.id, isPrimary: true },
-        data: { isPrimary: false },
-      });
-    }
-
-    for (const permission of permissionOptions) {
-      const dbPermission = await prisma.permission.findUnique({ where: { key: permission.id } });
-      if (!dbPermission) continue;
-      await prisma.employeePermission.upsert({
-        where: { employeeId_permissionId: { employeeId: record.id, permissionId: dbPermission.id } },
-        update: { allowed: employee.permissions[permission.id] },
-        create: {
-          employeeId: record.id,
-          permissionId: dbPermission.id,
-          allowed: employee.permissions[permission.id],
-        },
-      });
+      record = await prisma.$transaction(async (tx) => {
+        const saved = await writeEmployeeCore(tx, employee);
+        if (existing) await syncLinkedUser(tx, context, { ...employee, id: saved.id }, existing.personnelNumber);
+        return saved;
+      }, { timeout: 20_000 });
+    } catch (error) {
+      const response = accountErrorResponse(error);
+      if (response) return NextResponse.json(response.body, { status: response.status });
+      throw error;
     }
 
     if (employee.individualAssignments) {
       for (const [date, shift] of Object.entries(employee.individualAssignments)) {
-        if (shift === "Frei") continue;
-        await prisma.shiftAssignment.upsert({
-          where: { employeeId_date: { employeeId: record.id, date: new Date(`${date}T00:00:00.000Z`) } },
-          update: { shift: toShiftCode(shift) },
-          create: {
-            employeeId: record.id,
-            date: new Date(`${date}T00:00:00.000Z`),
-            shift: toShiftCode(shift),
-            source: "MANUAL",
-          },
+        const assignmentDate = new Date(`${date}T00:00:00.000Z`);
+        await prisma.$transaction(async (tx) => {
+          const key = { employeeId: record.id, date: assignmentDate };
+          const assignment = await tx.shiftAssignment.findUnique({
+            where: { employeeId_date: key },
+          });
+          const nextShift = toShiftCode(shift);
+          if (assignment?.source === "MANUAL" && assignment.shift === nextShift) return;
+          const previousShift = assignment?.source === "MANUAL"
+            ? fromShiftCode(assignment.shift)
+            : before ? getShiftForDate(assignmentDate, toEmployeeShiftPlan(before)) : null;
+          if (assignment) {
+            const changed = await tx.shiftAssignment.updateMany({
+              where: { id: assignment.id, shift: assignment.shift, updatedAt: assignment.updatedAt },
+              data: { shift: nextShift, source: "MANUAL" },
+            });
+            if (changed.count === 0) {
+              throw new Error("Die Schicht wurde inzwischen geändert. Bitte neu laden.");
+            }
+          } else {
+            await tx.shiftAssignment.create({ data: { ...key, shift: nextShift, source: "MANUAL" } });
+          }
+          if (previousShift !== shift) {
+            await createNotification(tx, shiftNotification(record.id, assignmentDate, previousShift, shift));
+          }
         });
       }
     }
@@ -123,7 +141,7 @@ export async function PUT(request: Request) {
       entityType: "Employee",
       entityId: record.id,
       oldValues: before,
-      newValues: { ...employee, id: record.id },
+      newValues: { ...employee, account: undefined, id: record.id },
     });
   }
 
@@ -132,4 +150,46 @@ export async function PUT(request: Request) {
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
   return NextResponse.json(records.map(toEmployeeDto));
+}
+
+/** Neuen Mitarbeiter inklusive Benutzerkonto mit Startpasswort anlegen (nur Admin). */
+export async function POST(request: Request) {
+  const context = await getAuthorizationContext();
+  if (!context) {
+    return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+  }
+  if (!hasPermission(context, "editEmployees") || !canManageAccounts(context)) {
+    return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
+  }
+  const body = (await request.json().catch(() => null)) as
+    | { employee?: Employee; startPassword?: unknown }
+    | null;
+  const employee = body?.employee;
+  if (
+    !employee || typeof employee !== "object" ||
+    typeof employee.firstName !== "string" || !employee.firstName.trim() ||
+    typeof employee.lastName !== "string" || !employee.lastName.trim() ||
+    typeof employee.personnelNumber !== "string" || !employee.personnelNumber.trim() ||
+    typeof body?.startPassword !== "string"
+  ) {
+    return NextResponse.json(
+      { error: "Bitte Vorname, Nachname, Personalnummer und Startpasswort angeben." },
+      { status: 400 },
+    );
+  }
+  try {
+    const created = await createEmployeeWithAccount(context, employee, body.startPassword);
+    const records = await prisma.employee.findMany({
+      include: employeeRelations,
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    });
+    return NextResponse.json(
+      { created, employees: records.map(toEmployeeDto) },
+      { status: 201, headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    const response = accountErrorResponse(error);
+    if (response) return NextResponse.json(response.body, { status: response.status });
+    throw error;
+  }
 }

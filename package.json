@@ -11,7 +11,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:sync-permissions": "tsx prisma/sync-permissions.ts",
+    "db:employee-report": "tsx prisma/employee-report.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
