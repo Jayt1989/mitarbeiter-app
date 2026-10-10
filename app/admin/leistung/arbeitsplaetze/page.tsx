@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getAuthorizationContext } from "@/lib/authorization";
+import Link from "@/app/components/access-link";
+import { requirePageAccess } from "@/lib/page-access";
 import { listPerformanceWorkstations } from "@/lib/performance";
-import { canManagePerformanceTargets, canViewPerformance, performanceAreas } from "@/lib/performance-rules";
+import { canViewPerformance, performanceAreas } from "@/lib/performance-rules";
 import TargetForm from "./target-form";
 
-export const metadata: Metadata = { title: "Arbeitsplatz-Sollwerte | Mitarbeiter-App" };
+export const metadata: Metadata = { title: "Arbeitsplatz-Sollwerte | TeamPlan" };
 
 export default async function WorkstationTargetsPage() {
-  const context = await getAuthorizationContext();
-  if (!context) redirect("/login");
-  if (!canManagePerformanceTargets(context)) redirect("/dashboard");
+  const context = await requirePageAccess("/admin/leistung/arbeitsplaetze");
   const workstations = await listPerformanceWorkstations();
   return (
     <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">

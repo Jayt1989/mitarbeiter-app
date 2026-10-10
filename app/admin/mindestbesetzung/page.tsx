@@ -3,7 +3,7 @@ import AreaSettings from "../area-settings";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Mindestbesetzung | Mitarbeiter-App",
+  title: "Mindestbesetzung | TeamPlan",
   description: "Bereiche und erforderliche Besetzung pro Schicht verwalten.",
 };
 

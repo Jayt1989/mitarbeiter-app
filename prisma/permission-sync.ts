@@ -21,6 +21,8 @@ export const defaultRolePermissions: Record<RoleCode, ReadonlySet<string>> = {
     "ownQualifications",
     "requestShiftSwap",
     "recordPerformance",
+    "receiveMessages",
+    "replyMessages",
   ]),
   FOREMAN: new Set([
     "ownShiftPlan",
@@ -37,6 +39,8 @@ export const defaultRolePermissions: Record<RoleCode, ReadonlySet<string>> = {
     "approveShiftSwap",
     "recordPerformance",
     "viewPerformance",
+    "receiveMessages",
+    "replyMessages",
   ]),
   // Admin erhält immer alle Rechte aus permissionOptions, auch später hinzugefügte.
   ADMIN: new Set(allPermissionKeys),

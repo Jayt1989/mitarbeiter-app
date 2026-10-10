@@ -115,7 +115,7 @@ test("Leistungskachel und Sichtbarkeit richten sich nach Rolle und vorhandenen R
   assert.equal(performanceDashboardLink(performanceVisibility({ ...base, employeeId: null })), null);
 });
 
-test("Startseite zeigt Leistung für Admin immer und für Mitarbeiter nur mit Erfassungsrecht", () => {
+test("Startseite zeigt Leistung auch für Admin ausschließlich mit tatsächlichen Rechten", () => {
   const base = { userId: "u", employeeId: "e", login: "MA-1", role: "EMPLOYEE", permissions: {} };
   assert.equal(performanceHomeLink(null), null);
   assert.equal(performanceHomeLink(base), null);
@@ -125,8 +125,9 @@ test("Startseite zeigt Leistung für Admin immer und für Mitarbeiter nur mit Er
   assert.equal(performanceHomeLink({
     ...base, permissions: { viewPerformance: true, managePerformanceTargets: true },
   }), null);
-  assert.equal(performanceHomeLink({ ...base, role: "ADMIN", employeeId: null })?.href, "/admin/leistung");
-  assert.equal(performanceHomeLink({ ...base, role: "ADMIN" })?.title, "Leistung");
+  assert.equal(performanceHomeLink({ ...base, role: "ADMIN", employeeId: null }), null);
+  assert.equal(performanceHomeLink({ ...base, role: "ADMIN" }), null);
+  assert.equal(performanceHomeLink({ ...base, role: "ADMIN", permissions: { viewPerformance: true } })?.href, "/admin/leistung");
   assert.equal(performanceHomeLink({ ...base, role: "FOREMAN" }), null);
   assert.equal(performanceHomeLink({
     ...base, role: "FOREMAN", permissions: { viewPerformance: true },

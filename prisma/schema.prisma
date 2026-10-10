@@ -41,6 +41,7 @@ enum AssignmentSource {
 }
 
 enum NotificationType {
+  VACATION_REQUESTED
   VACATION_APPROVED
   VACATION_REJECTED
   SHIFT_CHANGED
@@ -50,6 +51,7 @@ enum NotificationType {
   QUALIFICATION_ADDED
   SWAP_REQUESTED
   SWAP_PARTNER_CONFIRMED
+  SWAP_AWAITING_APPROVAL
   SWAP_PARTNER_REJECTED
   SWAP_APPROVED
   SWAP_REJECTED
@@ -57,6 +59,98 @@ enum NotificationType {
   ADDITIONAL_SHIFT_RELEASED
   ADDITIONAL_SHIFT_UPDATED
   ADDITIONAL_SHIFT_CANCELLED
+  MESSAGE_RECEIVED
+  MESSAGE_REPLY
+}
+
+enum MessageThreadStatus {
+  OFFEN
+  WARTET_AUF_ANTWORT
+  BEANTWORTET
+  ERLEDIGT
+  ARCHIVIERT
+}
+
+enum MessageRecipientType {
+  SINGLE
+  MULTIPLE
+  DEPARTMENT
+  SHIFT_GROUP
+  ALL
+}
+
+model MessageDispatch {
+  id                 String               @id
+  createdById        String?
+  recipientType      MessageRecipientType
+  recipientSelection Json
+  recipientCount     Int
+  requestHash        String
+  createdAt          DateTime             @default(now())
+
+  createdBy User?           @relation("MessageDispatchCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  threads   MessageThread[]
+
+  @@index([createdById, createdAt])
+}
+
+model MessageThread {
+  id            String              @id @default(cuid())
+  dispatchId    String
+  subject       String
+  createdById   String?
+  creatorName   String
+  important     Boolean             @default(false)
+  replyRequired Boolean             @default(false)
+  status        MessageThreadStatus @default(OFFEN)
+  version       Int                 @default(1)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  dispatch     MessageDispatch      @relation(fields: [dispatchId], references: [id], onDelete: Restrict)
+  createdBy    User?                @relation("MessageThreadCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  participants MessageParticipant[]
+  messages     Message[]
+
+  @@index([createdById, updatedAt])
+}
+
+model MessageParticipant {
+  id          String    @id @default(cuid())
+  threadId    String
+  userId      String?
+  employeeId  String?
+  name        String
+  read        Boolean   @default(false)
+  readAt      DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  thread   MessageThread @relation(fields: [threadId], references: [id], onDelete: Restrict)
+  user     User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  employee Employee?     @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@unique([threadId, userId])
+  @@unique([threadId, employeeId])
+  @@index([userId, read, archivedAt])
+  @@index([employeeId, read, archivedAt])
+}
+
+model Message {
+  id           String    @id @default(cuid())
+  threadId     String
+  sequence     Int
+  senderId     String?
+  senderName   String
+  content      String
+  requestId    String    @unique
+  createdAt    DateTime  @default(now())
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Restrict)
+  sender User?         @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([threadId, createdAt, id])
+  @@unique([threadId, sequence])
 }
 
 enum AdditionalShiftStatus {
@@ -164,7 +258,8 @@ model PerformanceEntry {
 
 model Notification {
   id         String           @id @default(cuid())
-  employeeId String
+  employeeId String?
+  userId     String?
   title      String
   message    String
   type       NotificationType
@@ -173,10 +268,12 @@ model Notification {
   createdAt  DateTime         @default(now())
   readAt     DateTime?
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, createdAt, id])
   @@index([employeeId, read])
+  @@index([userId, createdAt, id])
 }
 
 enum CompanyDayType {
@@ -234,9 +331,14 @@ model User {
   createdTemporaryAssignments TemporaryAssignment[] @relation("TemporaryAssignmentCreator")
   createdCompanyDays          CompanyDay[]          @relation("CompanyDayCreator")
   reviewedShiftSwaps          ShiftSwapRequest[]    @relation("SwapReviewer")
+  notifications               Notification[]
   recordedPerformance         PerformanceEntry[]    @relation("PerformanceRecorder")
   createdAdditionalShifts     AdditionalShift[]     @relation("AdditionalShiftCreator")
   releasedAdditionalShifts    AdditionalShift[]     @relation("AdditionalShiftReleaser")
+  messageDispatches           MessageDispatch[]     @relation("MessageDispatchCreator")
+  messageThreads              MessageThread[]       @relation("MessageThreadCreator")
+  messageParticipants         MessageParticipant[]
+  messages                    Message[]             @relation("MessageSender")
 
   @@index([active, roleId])
 }
@@ -271,6 +373,7 @@ model Employee {
   receivedShiftSwaps   ShiftSwapRequest[]      @relation("SwapPartner")
   performanceEntries   PerformanceEntry[]
   additionalShifts     AdditionalShift[]
+  messageParticipants  MessageParticipant[]
 
   @@index([lastName, firstName])
   @@index([isActive, shiftModelId, shiftGroupId])

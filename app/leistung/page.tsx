@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { redirect } from "next/navigation";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
-import { getAuthorizationContext } from "@/lib/authorization";
+import { requirePageAccess } from "@/lib/page-access";
 import { loadRecordingOverview } from "@/lib/performance";
 import {
-  canRecordPerformance,
   canViewPerformance,
   performanceVisibility,
   formatDuration,
@@ -16,7 +14,7 @@ import PerformanceForm from "./performance-form";
 import DeleteEntryButton from "./delete-entry-button";
 import AchievementBadge from "./achievement-badge";
 
-export const metadata: Metadata = { title: "Leistung erfassen | Mitarbeiter-App" };
+export const metadata: Metadata = { title: "Leistung erfassen | TeamPlan" };
 
 const shiftLabels: Record<string, string> = { Früh: "Frühschicht", Spät: "Spätschicht", Nacht: "Nachtschicht" };
 const longDate = new Intl.DateTimeFormat("de-DE", {
@@ -27,9 +25,7 @@ const numberFormat = new Intl.NumberFormat("de-DE");
 const rateFormat = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default async function PerformancePage() {
-  const context = await getAuthorizationContext();
-  if (!context) redirect("/login");
-  if (!canRecordPerformance(context)) redirect("/dashboard");
+  const context = await requirePageAccess("/leistung");
   const showDetails = canViewPerformance(context);
   const overview = await loadRecordingOverview(context);
   const { resolved, entries } = overview;
@@ -40,8 +36,8 @@ export default async function PerformancePage() {
       <header className="border-b border-[#dce4dc] bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-8">
           <Link href="/" className="flex shrink-0 items-center gap-3 rounded-lg">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="hidden text-sm font-semibold sm:inline">MITARBEITERPORTAL</span>
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">TP</span>
+            <span className="hidden text-sm font-semibold sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Hauptnavigation">
             {performanceVisibility(context).performanceTargets && (

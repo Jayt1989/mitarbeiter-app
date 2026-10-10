@@ -31,7 +31,7 @@ function fakeDb(options: {
   });
   const models = [
     "vacationRequest", "absence", "temporaryAssignment", "shiftAssignment", "shiftSwapRequest", "vacationAccount",
-    "employeeQualification", "employeePermission", "employeeDepartment", "notification", "auditLog", "companyDay", "user", "performanceEntry", "additionalShift",
+    "employeeQualification", "employeePermission", "employeeDepartment", "notification", "auditLog", "companyDay", "user", "performanceEntry", "additionalShift", "messageParticipant",
   ];
   const db: Record<string, unknown> = Object.fromEntries(models.map((model) => [model, counter(model)]));
   db.employee = {
@@ -52,6 +52,20 @@ function fakeDb(options: {
 }
 
 const admin = { userId: "admin-user", employeeId: "admin-employee" };
+
+test("Nachrichtenverläufe werden als erhaltene Historie ausgewiesen und nicht zur Löschung angeboten", async () => {
+  const { db, calls } = fakeDb({
+    employee: { id: "messages", personnelNumber: "MSG-DELETION", isActive: false, role: "EMPLOYEE" },
+    counts: { messageParticipant: 2 },
+  });
+  const preview = (await analyzeEmployeeDeletion(db, "messages", admin))!;
+  assert.ok(preview.retained.some((entry) => entry.key === "messageThreads" && entry.count === 2));
+  assert.ok(!preview.historical.some((entry) => entry.key === "messageThreads"));
+  await deleteEmployeePermanently(db, admin, "messages", {
+    confirmation: "MSG-DELETION", confirmHistory: false, fingerprint: preview.fingerprint,
+  });
+  assert.ok(!calls.some((entry) => entry.startsWith("messageParticipant.")));
+});
 
 test("Zusatzschichten bleiben historisch erhalten und verhindern eine endgültige Mitarbeiterlöschung", async () => {
   const { db } = fakeDb({ employee: { id: "extra", personnelNumber: "EXTRA-1", isActive: false },

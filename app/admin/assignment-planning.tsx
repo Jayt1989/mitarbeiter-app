@@ -2,7 +2,7 @@
 
 import { apiJson } from "@/lib/api-client";
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
@@ -218,14 +218,14 @@ export default function AssignmentPlanning() {
             className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]"
           >
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
-              MA
+              TP
             </span>
             <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
-              MITARBEITERPORTAL
+              TeamPlan
             </span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
-            <Link href="/admin" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] sm:px-3 sm:text-sm">
+            <Link staffing href="/admin" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] sm:px-3 sm:text-sm">
               Personalbesetzung
             </Link>
             <Link href="/admin/wochenplan" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] sm:px-3 sm:text-sm">

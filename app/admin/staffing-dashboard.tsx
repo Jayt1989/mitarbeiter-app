@@ -1,9 +1,10 @@
 "use client";
 
-import { canAccessPage } from "@/lib/access-policy";
+import { canAccessPage, canViewStaffing } from "@/lib/access-policy";
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
+import MessageUnreadBadge from "@/app/components/message-unread-badge";
 import type { Employee } from "../mitarbeiter/data";
 import { shiftPlanRepository } from "../schichtplan/repository";
 import {
@@ -113,6 +114,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
   performanceLink: ReturnType<typeof performanceDashboardLink>;
   access: { role: string; permissions: Record<string, boolean> };
 }) {
+  const staffingAllowed = canViewStaffing(access);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => initialDate ?? berlinTodayKey());
   const [viewMode, setViewMode] = useState<ViewMode>("Woche");
@@ -126,6 +128,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
   const [planningError, setPlanningError] = useState("");
 
   useEffect(() => {
+    if (!staffingAllowed) return;
     let isCurrent = true;
 
     void calendarRepository.load().then((storedCalendar) => {
@@ -137,9 +140,10 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [staffingAllowed]);
 
   useEffect(() => {
+    if (!staffingAllowed) return;
     let isCurrent = true;
 
     const refresh = () => {
@@ -162,9 +166,10 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
       window.removeEventListener("focus", refresh);
       window.removeEventListener("planning:changed", refresh);
     };
-  }, []);
+  }, [staffingAllowed]);
 
   useEffect(() => {
+    if (!staffingAllowed) return;
     let isCurrent = true;
 
     void areaRepository.load().then((configuration) => {
@@ -176,7 +181,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [staffingAllowed]);
 
   const staffingAbsences = getStaffingAbsences(vacationRequests, recordedAbsences);
 
@@ -217,13 +222,14 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
             className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]"
           >
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
-              MA
+              TP
             </span>
             <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
-              MITARBEITERPORTAL
+              TeamPlan
             </span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
+            {canAccessPage(access, "/nachrichten") && <Link href="/nachrichten" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Nachrichten</Link>}
             {canAccessPage(access, "/admin/zusatzschichten") && <Link href="/admin/zusatzschichten" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Zusatzschichten</Link>}
             {canAccessPage(access, "/admin/schichttausch") && <Link href="/admin/schichttausch" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Schichttausch</Link>}
             {performanceLink && <Link href={performanceLink.href} className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Leistung</Link>}
@@ -282,13 +288,13 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
               ADMIN · PERSONALPLANUNG
             </p>
             <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
-              Personalbesetzung
+              {staffingAllowed ? "Personalbesetzung" : "Administration"}
             </h1>
             <p className="mt-2 text-sm text-[#68766d]">
-              Verfügbarkeit, Schichten und Abwesenheiten im Überblick.
+              {staffingAllowed ? "Verfügbarkeit, Schichten und Abwesenheiten im Überblick." : "Deine freigeschalteten Verwaltungsfunktionen."}
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          {staffingAllowed && <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-[#526056]">
                 Datum auswählen
@@ -317,18 +323,23 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
 
-        <div className="mt-5">
+        {staffingAllowed && <div className="mt-5">
           <YearSelector
             year={Number(selectedDate.slice(0, 4))}
             onChange={(year) => setSelectedDate((date) => moveDateKeyToYear(date, year))}
           />
-        </div>
+        </div>}
 
         <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
+            ...(canAccessPage(access, "/nachrichten") ? [{
+              href: "/nachrichten", label: "KOMMUNIKATION", title: "Nachrichten",
+              text: "Informationen senden und private Antworten lesen.", icon: "M3 5h18v14H3zM3 6l9 7 9-7",
+              color: "bg-[#e1f2e8] text-[#197044]",
+            }] : []),
             ...(performanceLink ? [{
               ...performanceLink, label: "LEISTUNG", icon: "M5 20V10m7 10V4m7 16v-7",
               color: "bg-[#e1f2e8] text-[#197044]",
@@ -337,7 +348,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
             { href: "/admin/einstellungen", label: "EINSTELLUNGEN", title: "Feiertage & Kalender", text: "Bundesland, Feiertage und betriebliche Sondertage.", icon: "M4 6h16v14H4zM4 10h16M8 3v4m8-4v4", color: "bg-[#fde9e7] text-[#a33e31]" },
             { href: "/admin/jahreswechsel", label: "URLAUBSJAHR", title: "Jahreswechsel", text: "Urlaubskonten für das neue Jahr anlegen.", icon: "M12 4v4m0 8v4M4 12h4m8 0h4M6.5 6.5l2.5 2.5m6 6 2.5 2.5m0-11L15 9m-6 6-2.5 2.5", color: "bg-[#e5eff9] text-[#316b9b]" },
             { href: "/admin/export", label: "AUSWERTUNGEN", title: "Export", text: "Pläne und Übersichten als PDF oder Excel.", icon: "M12 4v11m0 0-4-4m4 4 4-4M5 19h14", color: "bg-[#e1f2e8] text-[#197044]" },
-          ].map((tile) => (
+          ].filter((tile) => canAccessPage(access, tile.href)).map((tile) => (
             <Link
               key={tile.href}
               href={tile.href}
@@ -351,7 +362,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
                 </span>
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold tracking-[0.12em] text-[#7b897f]">{tile.label}</p>
-                  <h2 className="mt-0.5 text-base font-semibold">{tile.title}</h2>
+                  <h2 className="mt-0.5 text-base font-semibold">{tile.title}{tile.href === "/nachrichten" && <MessageUnreadBadge />}</h2>
                   <p className="mt-0.5 text-sm text-[#68766d]">{tile.text}</p>
                 </div>
               </div>
@@ -360,7 +371,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
           ))}
         </div>
 
-        {viewMode === "Tag" ? (
+        {staffingAllowed && (viewMode === "Tag" ? (
           <DayView
             staffing={selectedDay}
             calendar={calendar}
@@ -380,7 +391,7 @@ export default function StaffingDashboard({ initialDate, performanceLink, access
             onToday={() => setSelectedDate(berlinTodayKey())}
             onSelectDay={openDay}
           />
-        )}
+        ))}
       </div>
     </main>
   );

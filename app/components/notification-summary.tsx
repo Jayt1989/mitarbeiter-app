@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import { useNotifications } from "./notifications-provider";
 import NotificationList, { NotificationStatus } from "./notification-list";
 

@@ -7,6 +7,7 @@ import { temporaryAssignmentRelations, toTemporaryAssignmentDto } from "./assign
 import { ShiftSwapError } from "./shift-swap-rules";
 import type { AbsenceEntry } from "@/app/admin/staffing-data";
 import { toOverviewEmployee } from "./employee-overview";
+import { canViewStaffing } from "./access-policy";
 
 const absenceLabels: Record<AbsenceType, AbsenceEntry["type"]> = {
   SICK: "Krank", TRAINING: "Schulung", SPECIAL_LEAVE: "Sonderurlaub",
@@ -23,8 +24,10 @@ export async function loadShiftPlan(
   if (assignmentOverview && !hasPermission(context, "editAssignments")) {
     throw new ShiftSwapError("Keine Berechtigung für die Einsatzplanung.", 403);
   }
-  const staffingAccess = staffing && context.role === "ADMIN" && context.permissions.openAdmin === true &&
-    (context.permissions.viewEmployees === true || context.permissions.editEmployees === true);
+  if (staffing && !canViewStaffing(context)) {
+    throw new ShiftSwapError("Keine Berechtigung für die Personalbesetzung.", 403);
+  }
+  const staffingAccess = staffing && canViewStaffing(context);
   const team = hasPermission(context, "teamShiftPlan") || staffingAccess || assignmentOverview;
   if (!team && (staffing || !hasPermission(context, "ownShiftPlan") || !context.employeeId)) {
     throw new ShiftSwapError("Keine Berechtigung für den Schichtplan.", 403);
@@ -48,7 +51,11 @@ export async function loadShiftPlan(
   return {
     employees: employees.map((record) => {
       const employee = toEmployeeDto(record);
-      return assignmentOverview ? toOverviewEmployee(employee, "assignments") : employee;
+      if (assignmentOverview) return toOverviewEmployee(employee, "assignments");
+      const canSeeQualifications = ["viewQualifications", "editQualifications", "manageQualifications"]
+        .some((permission) => hasPermission(context, permission)) ||
+        (record.id === context.employeeId && hasPermission(context, "ownQualifications"));
+      return { ...employee, qualifications: canSeeQualifications ? employee.qualifications : {} };
     }),
     vacations: vacations.map((record) => {
       const showDetails = record.employeeId === context.employeeId

@@ -3,7 +3,7 @@ import QualificationManagement from "../qualification-management";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Qualifikationen | Mitarbeiter-App",
+  title: "Qualifikationen | TeamPlan",
   description: "Qualifikationskatalog pflegen und Mitarbeiter einstufen.",
 };
 

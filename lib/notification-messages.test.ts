@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   assignmentNotification, notificationDate, qualificationNotification,
-  shiftNotification, vacationNotification,
+  shiftNotification, swapApprovalNotification,
+  vacationNotification, vacationRequestNotification,
 } from "./notification-messages";
 
 const period = {
@@ -10,6 +11,30 @@ const period = {
   startDate: new Date("2026-10-12T00:00:00.000Z"),
   endDate: new Date("2026-10-16T00:00:00.000Z"),
 };
+
+test("new vacation request notification names the employee, period and exact admin request", () => {
+  assert.deepEqual(vacationRequestNotification("reviewer-1", "Max Mustermann", {
+    ...period, id: "vacation-1",
+  }), {
+    userId: "reviewer-1",
+    title: "Neuer Urlaubsantrag",
+    message: "Neuer Urlaubsantrag von Max Mustermann für 12.10.2026 bis 16.10.2026.",
+    type: "VACATION_REQUESTED",
+    link: "/admin/urlaub?request=vacation-1",
+  });
+});
+
+test("confirmed shift swap notification names both employees and links to its admin card", () => {
+  assert.deepEqual(swapApprovalNotification("reviewer-1", {
+    id: "swap-1", requesterName: "Max Mustermann", partnerName: "Anna Beispiel",
+  }), {
+    userId: "reviewer-1",
+    title: "Schichttausch wartet auf Freigabe",
+    message: "Schichttausch von Max Mustermann und Anna Beispiel wartet auf Freigabe.",
+    type: "SWAP_AWAITING_APPROVAL",
+    link: "/admin/schichttausch#swap-swap-1",
+  });
+});
 
 test("vacation approval matches the required message and recipient", () => {
   assert.deepEqual(vacationNotification(period, "APPROVED"), {

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   }
   const limit = new URL(request.url).searchParams.get("preview") === "true" ? 5 : undefined;
   return NextResponse.json(
-    await loadOwnNotifications(context.employeeId, limit),
+    await loadOwnNotifications(context.employeeId, context.userId, limit),
     { headers: privateHeaders },
   );
 }
@@ -30,11 +30,9 @@ export async function PATCH(request: Request) {
   if (!body.success) {
     return NextResponse.json({ error: "Ungültige Benachrichtigungsaktion" }, { status: 400 });
   }
-  if (!context.employeeId) {
-    return NextResponse.json({ error: "Kein Mitarbeiterkonto zugeordnet" }, { status: 403 });
-  }
   const result = await markOwnNotificationsRead(
-    context.employeeId, body.data.action === "read" ? body.data.id : undefined,
+    context.employeeId, context.userId,
+    body.data.action === "read" ? body.data.id : undefined,
   );
   if (body.data.action === "read" && result.count === 0) {
     return NextResponse.json(

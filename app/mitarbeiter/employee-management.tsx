@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import {
   createEmployeeDraft,
@@ -305,10 +305,10 @@ export default function EmployeeManagement({ access }: {
             className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]"
           >
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
-              MA
+              TP
             </span>
             <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
-              MITARBEITERPORTAL
+              TeamPlan
             </span>
           </Link>
           <nav className="flex items-center gap-2" aria-label="Hauptnavigation">

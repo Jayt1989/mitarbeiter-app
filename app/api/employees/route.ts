@@ -52,7 +52,11 @@ export async function GET(request: Request) {
 
   return NextResponse.json(records.map((record) => {
     const employee = toEmployeeDto(record);
-    return scope ? toOverviewEmployee(employee, scope) : employee;
+    if (scope) return toOverviewEmployee(employee, scope);
+    const canSeeQualifications = ["viewQualifications", "editQualifications", "manageQualifications"]
+      .some((permission) => hasPermission(context, permission)) ||
+      (record.id === context.employeeId && hasPermission(context, "ownQualifications"));
+    return { ...employee, qualifications: canSeeQualifications ? employee.qualifications : {} };
   }), { headers: { "Cache-Control": "private, no-store" } });
 }
 

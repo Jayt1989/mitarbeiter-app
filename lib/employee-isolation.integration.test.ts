@@ -156,6 +156,91 @@ test("HTTP-Benutzertrennung: Mitarbeiter A/B, fremde IDs, Server Actions und akt
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     }
+
+    await t.test("Startseite und URLs: Mitarbeiter mit wenigen Rechten, Vorarbeiter mit Teilrechten und eingeschränkter Admin", async () => {
+      const employeePermissions = await database.permission.findMany();
+      await database.employeePermission.createMany({
+        data: employeePermissions.map((permission) => ({
+          employeeId: a.employee.id, permissionId: permission.id, allowed: permission.key === "ownShiftPlan",
+        })),
+      });
+      try {
+        const home = await request(sessions[0], "/");
+        assert.equal(home.status, 200);
+        const html = await home.text();
+        assert.ok(html.includes('href="/schichtplan"'));
+        const plan = await (await request(sessions[0], "/api/shift-plan")).json() as { employees: { qualifications: Record<string, number> }[] };
+        assert.deepEqual(plan.employees[0].qualifications, {}, "Eigene Qualifikationen benötigen ein eigenes Recht");
+        for (const path of ["/mitarbeiter", "/admin", "/urlaub", "/leistung", "/nachrichten", "/schichttausch",
+          "/admin/leistung", "/admin/qualifikationen", "/admin/einsatzplanung"]) {
+          assert.ok(!html.includes(`href="${path}"`), path);
+          const denied = await request(sessions[0], path);
+          assert.ok([302, 303, 307].includes(denied.status), path);
+          assert.equal(new URL(denied.headers.get("location")!, base).pathname, "/", path);
+        }
+        await database.employeePermission.updateMany({ where: { employeeId: a.employee.id }, data: { allowed: false } });
+        const revokedHome = await request(sessions[0], "/");
+        assert.ok(!(await revokedHome.text()).includes('href="/schichtplan"'));
+        assert.notEqual((await request(sessions[0], "/dashboard")).status, 200);
+        assert.equal((await request(sessions[0], "/api/shift-plan")).status, 403);
+      } finally {
+        await database.employeePermission.deleteMany({ where: { employeeId: a.employee.id } });
+      }
+
+      await database.rolePermission.updateMany({ where: { roleId: foremanRole.id }, data: { allowed: false } });
+      try {
+        await database.rolePermission.updateMany({
+          where: { roleId: foremanRole.id, permission: { key: { in: ["teamShiftPlan", "approveShiftSwap", "viewPerformance"] } } },
+          data: { allowed: true },
+        });
+        const html = await (await request(sessions[3], "/")).text();
+        for (const path of ["/schichtplan", "/admin/schichttausch", "/admin/leistung"]) {
+          assert.ok(html.includes(`href="${path}"`), path);
+          assert.equal((await request(sessions[3], path)).status, 200, path);
+        }
+        for (const path of ["/admin", "/mitarbeiter", "/admin/urlaub", "/admin/qualifikationen",
+          "/admin/leistung/arbeitsplaetze", "/admin/einsatzplanung", "/dashboard"]) {
+          assert.ok(!html.includes(`href="${path}"`), path);
+          assert.notEqual((await request(sessions[3], path)).status, 200, path);
+        }
+        assert.equal((await request(sessions[3], "/api/shift-plan?scope=staffing")).status, 403);
+        const plan = await (await request(sessions[3], "/api/shift-plan")).json() as { employees: { qualifications: Record<string, number> }[] };
+        for (const employee of plan.employees) {
+          assert.deepEqual(employee.qualifications, {}, "Teamplanrecht schaltet fremde Qualifikationen nicht frei");
+        }
+        const release = await database.permission.findUniqueOrThrow({ where: { key: "releaseAdditionalShifts" } });
+        await database.rolePermission.update({
+          where: { roleId_permissionId: { roleId: foremanRole.id, permissionId: release.id } }, data: { allowed: true },
+        });
+        assert.equal((await request(sessions[3], "/admin/zusatzschichten")).status, 200);
+        assert.equal((await request(sessions[3], "/api/additional-shifts")).status, 200);
+        assert.ok((await (await request(sessions[3], "/")).text()).includes('href="/admin/zusatzschichten"'));
+      } finally {
+        await database.rolePermission.updateMany({ where: { roleId: foremanRole.id }, data: { allowed: true } });
+      }
+
+      const html = await (await request(sessions[2], "/")).text();
+      for (const path of ["/admin", "/admin/leistung", "/mitarbeiter", "/schichtplan", "/urlaub", "/nachrichten"]) {
+        assert.ok(!html.includes(`href="${path}"`), path);
+      }
+      const openAdmin = await database.permission.findUniqueOrThrow({ where: { key: "openAdmin" } });
+      await database.rolePermission.update({
+        where: { roleId_permissionId: { roleId: adminRole.id, permissionId: openAdmin.id } }, data: { allowed: true },
+      });
+      try {
+        const response = await request(sessions[2], "/admin");
+        assert.equal(response.status, 200);
+        const adminHtml = await response.text();
+        assert.ok(adminHtml.includes("Administration"));
+        assert.ok(!adminHtml.includes("Datum auswählen"));
+        assert.equal((await request(sessions[2], "/api/shift-plan?scope=staffing")).status, 403);
+        assert.notEqual((await request(sessions[2], "/admin/mitarbeiter")).status, 200);
+      } finally {
+        await database.rolePermission.update({
+          where: { roleId_permissionId: { roleId: adminRole.id, permissionId: openAdmin.id } }, data: { allowed: false },
+        });
+      }
+    });
     const manifest = JSON.parse(await readFile(".next/server/server-reference-manifest.json", "utf8")) as {
       node: Record<string, { exportedName: string }>;
     };
@@ -371,6 +456,10 @@ test("HTTP-Benutzertrennung: Mitarbeiter A/B, fremde IDs, Server Actions und akt
       assert.equal((await request(sessions[2], "/admin/leistung/arbeitsplaetze")).status, 200);
       assert.equal((await request(sessions[2], "/admin/schichttausch")).status, 200);
       await database.rolePermission.updateMany({ where: { roleId: adminRole.id }, data: { allowed: true } });
+      const fullAdminHome = await (await request(sessions[2], "/")).text();
+      for (const path of ["/admin", "/mitarbeiter", "/admin/leistung", "/admin/qualifikationen", "/admin/zusatzschichten", "/nachrichten"]) {
+        assert.ok(fullAdminHome.includes(`href="${path}"`), path);
+      }
       for (const path of ["/admin", "/mitarbeiter", "/admin/urlaub", "/admin/qualifikationen",
         "/admin/einsatzplanung", "/admin/wochenplan", "/admin/mindestbesetzung",
         "/admin/einstellungen", "/admin/jahreswechsel", "/admin/export", "/admin/zusatzschichten"]) {

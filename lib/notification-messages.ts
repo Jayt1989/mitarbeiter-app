@@ -1,12 +1,15 @@
 import type { NotificationType } from "@prisma/client";
 
-export type NotificationInput = {
-  employeeId: string;
+type NotificationContent = {
   title: string;
   message: string;
   type: NotificationType;
   link: string;
 };
+export type NotificationInput = NotificationContent & (
+  | { employeeId: string; userId?: never }
+  | { userId: string; employeeId?: never }
+);
 
 export function notificationDate(date: Date) {
   return new Intl.DateTimeFormat("de-DE", {
@@ -15,6 +18,34 @@ export function notificationDate(date: Date) {
 }
 
 type Period = { employeeId: string; startDate: Date; endDate: Date };
+type VacationRequestPeriod = Period & { id: string };
+
+export function vacationRequestNotification(
+  userId: string,
+  employeeName: string,
+  request: VacationRequestPeriod,
+): NotificationInput {
+  return {
+    userId,
+    title: "Neuer Urlaubsantrag",
+    message: `Neuer Urlaubsantrag von ${employeeName} für ${notificationDate(request.startDate)} bis ${notificationDate(request.endDate)}.`,
+    type: "VACATION_REQUESTED",
+    link: `/admin/urlaub?request=${encodeURIComponent(request.id)}`,
+  };
+}
+
+export function swapApprovalNotification(
+  userId: string,
+  swap: { id: string; requesterName: string; partnerName: string },
+): NotificationInput {
+  return {
+    userId,
+    title: "Schichttausch wartet auf Freigabe",
+    message: `Schichttausch von ${swap.requesterName} und ${swap.partnerName} wartet auf Freigabe.`,
+    type: "SWAP_AWAITING_APPROVAL",
+    link: `/admin/schichttausch#swap-${encodeURIComponent(swap.id)}`,
+  };
+}
 
 export function vacationNotification(
   request: Period,

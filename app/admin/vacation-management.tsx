@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
@@ -132,8 +132,9 @@ function getCalendarDays(year: number, month: number) {
   return { firstWeekday, dayCount };
 }
 
-export default function VacationManagement({ access }: {
+export default function VacationManagement({ access, requestId }: {
   access: { employeeId: string | null; permissions: Record<string, boolean> };
+  requestId?: string;
 }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<VacationRequest[]>([]);
@@ -160,6 +161,9 @@ export default function VacationManagement({ access }: {
       if (!isCurrent) return;
       if (storedEmployees) setEmployees(storedEmployees);
       setRequests(storedRequests);
+      if (requestId) {
+        setSelectedRequest(storedRequests.find((request) => request.id === requestId) ?? null);
+      }
       setAreaConfiguration(storedAreas);
     }).catch((error: unknown) => {
       if (isCurrent) setDecisionError(error instanceof Error ? error.message : "Urlaubsanträge konnten nicht geladen werden.");
@@ -168,7 +172,7 @@ export default function VacationManagement({ access }: {
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [requestId]);
 
   const canOpenAdmin = access.permissions.otherVacations === true || access.permissions.approveVacation === true;
   const canApprove = access.permissions.approveVacation === true;
@@ -235,7 +239,7 @@ export default function VacationManagement({ access }: {
         <div className="mx-auto max-w-xl rounded-xl border border-[#e0e7e0] bg-white p-6 text-center">
           <h1 className="text-xl font-semibold">Kein Zugriff</h1>
           <p className="mt-2 text-sm text-[#68766d]">Für die Urlaubsverwaltung ist die Adminberechtigung erforderlich.</p>
-          <Link href="/admin" className="mt-5 inline-flex rounded-lg bg-[#174c37] px-4 py-2.5 text-sm font-semibold text-white">Zur Personalbesetzung</Link>
+          <Link staffing href="/admin" className="mt-5 inline-flex rounded-lg bg-[#174c37] px-4 py-2.5 text-sm font-semibold text-white">Zur Personalbesetzung</Link>
         </div>
       </main>
     );
@@ -245,12 +249,12 @@ export default function VacationManagement({ access }: {
     <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">
       <header className="border-b border-[#dce4dc] bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-8">
-          <Link href="/admin" className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">MITARBEITERPORTAL</span>
+          <Link href="/" className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">TP</span>
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex items-center gap-2" aria-label="Hauptnavigation">
-            <Link href="/admin" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Personalbesetzung</Link>
+            <Link staffing href="/admin" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Personalbesetzung</Link>
             <NotificationBell />
           </nav>
         </div>

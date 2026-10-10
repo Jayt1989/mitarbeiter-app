@@ -13,7 +13,8 @@ import type { AbsenceType } from "@/app/admin/staffing-data";
 import { addDaysToKey, berlinNowParts, dateKeyToUtc, getCalendarMarks, type CalendarMarks } from "@/lib/calendar";
 import { loadCalendarData } from "@/lib/calendar-server";
 import { performanceVisibility } from "@/lib/performance-rules";
-import { canAdditionalShift } from "@/lib/additional-shift-rules";
+import { canAccessPage } from "@/lib/access-policy";
+import { canUseMessages } from "@/lib/message-rules";
 
 /** Anzeige ohne medizinische Details: Krankheit erscheint nur als „Krank / abwesend“. */
 const absenceLabels: Record<PrismaAbsenceType, string> = {
@@ -70,6 +71,7 @@ export type PersonalDashboardData = {
     performanceReport: boolean;
     performanceTargets: boolean;
     additionalShifts?: boolean;
+    messages?: boolean;
   };
   today: DashboardDay | null;
   nextShift: DashboardDay | null;
@@ -121,7 +123,8 @@ export async function loadPersonalDashboard(
     qualifications:
       context.permissions.ownQualifications === true || context.permissions.viewQualifications === true,
     shiftSwap: context.permissions.requestShiftSwap === true,
-    additionalShifts: canAdditionalShift(context, "viewAdditionalShifts"),
+    additionalShifts: canAccessPage(context, "/admin/zusatzschichten"),
+    messages: canUseMessages(context),
     ...performanceVisibility(context),
   };
 
@@ -136,6 +139,7 @@ export async function loadPersonalDashboard(
   });
   if (!record) return null;
   const employee = toEmployeeDto(record);
+  if (!permissions.qualifications) employee.qualifications = {};
   const areaName = record.departments.find((entry) => entry.isPrimary)?.department.name ?? null;
 
   const [vacationRecords, vacationAccount, absenceRecords, assignmentRecords, qualificationRecords, calendar] =

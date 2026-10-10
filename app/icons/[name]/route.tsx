@@ -40,7 +40,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/icons/[n
           letterSpacing: -fontSize * 0.02,
         }}
       >
-        MA
+        TP
       </div>
     ),
     { width: size, height: size },

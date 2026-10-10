@@ -9,8 +9,10 @@ import { employeeRelations, toEmployeeDto } from "@/lib/employee-mapper";
 import { labelToStatus, toVacationRequestDto } from "@/lib/vacation-mapper";
 import { getVacationWorkdays, requestsOverlap } from "@/app/urlaub/vacation-data";
 import { loadCalendarState } from "@/lib/calendar-server";
-import { createNotification } from "@/lib/notifications";
-import { vacationNotification } from "@/lib/notification-messages";
+import { createNotification, notifyUsersWithPermission } from "@/lib/notifications";
+import { vacationNotification, vacationRequestNotification } from "@/lib/notification-messages";
+
+class VacationRequestOverlapError extends Error {}
 
 export async function GET() {
   const context = await getAuthorizationContext();
@@ -71,35 +73,32 @@ async function requestVacation(request: Request) {
     );
   }
 
-  const existingRequests = await prisma.vacationRequest.findMany({
-    where: { employeeId: employee.id, status: { in: ["REQUESTED", "APPROVED"] } },
-  });
-  const overlaps = existingRequests.some((entry) =>
-    requestsOverlap(
+  const created = await prisma.$transaction(async (tx) => {
+    const currentRequests = await tx.vacationRequest.findMany({
+      where: { employeeId: employee.id, status: { in: ["REQUESTED", "APPROVED"] } },
+    });
+    if (currentRequests.some((entry) => requestsOverlap(
       body.startDate,
       body.endDate,
       entry.startDate.toISOString().slice(0, 10),
       entry.endDate.toISOString().slice(0, 10),
-    ),
-  );
-  if (overlaps) {
-    return NextResponse.json(
-      { error: "Der Zeitraum überschneidet sich mit einem offenen oder genehmigten Antrag." },
-      { status: 409 },
-    );
-  }
-
-  const created = await prisma.$transaction(async (tx) => {
+    ))) {
+      throw new VacationRequestOverlapError("Der Zeitraum überschneidet sich mit einem offenen oder genehmigten Antrag.");
+    }
     await assertNoAdditionalPeriod(tx, employee.id, body.startDate, body.endDate);
-    return tx.vacationRequest.create({
-    data: {
-      employeeId: employee.id,
-      startDate: new Date(`${body.startDate}T00:00:00.000Z`),
-      endDate: new Date(`${body.endDate}T00:00:00.000Z`),
-      daysRequested: workdays.length,
-      comment: body.comment?.trim() || null,
-    },
+    const record = await tx.vacationRequest.create({
+      data: {
+        employeeId: employee.id,
+        startDate: new Date(`${body.startDate}T00:00:00.000Z`),
+        endDate: new Date(`${body.endDate}T00:00:00.000Z`),
+        daysRequested: workdays.length,
+        comment: body.comment?.trim() || null,
+      },
     });
+    const employeeName = `${employee.firstName} ${employee.lastName}`;
+    await notifyUsersWithPermission(tx, "approveVacation", (userId) =>
+      vacationRequestNotification(userId, employeeName, record));
+    return record;
   }, { isolationLevel: "Serializable" });
 
   await recordAuditLog({
@@ -171,6 +170,9 @@ async function decideVacation(request: Request) {
 }
 
 function conflictResponse(error: unknown) {
+  if (error instanceof VacationRequestOverlapError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
   if (error instanceof AdditionalShiftError) return NextResponse.json({ error: error.message }, { status: error.status });
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
     return NextResponse.json({ error: "Die Planung wurde gleichzeitig geändert. Bitte neu laden und erneut prüfen." }, { status: 409 });

@@ -30,7 +30,7 @@ function Header({ title, lines, createdAt }: { title: string; lines: string[]; c
         ))}
       </div>
       <p className="text-right text-[10px] text-[#68766d]">
-        Mitarbeiter-App
+        TeamPlan
         <br />
         Erstellt am {createdAt}
       </p>

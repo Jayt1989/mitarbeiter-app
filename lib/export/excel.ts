@@ -137,7 +137,7 @@ function addTable(
 
 export async function createWorkbook(result: ExportResult): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Mitarbeiter-App";
+  workbook.creator = "TeamPlan";
   workbook.created = new Date();
 
   if (result.type === "performance") {

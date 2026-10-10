@@ -5,7 +5,7 @@ export const passwordChangePath = "/passwort-aendern";
 
 const loginRequiredPrefixes = [
   "/admin", "/mitarbeiter", "/schichtplan", "/schichttausch", "/leistung", "/urlaub", "/export",
-  "/profil", passwordChangePath,
+  "/profil", "/dashboard", "/nachrichten", "/benachrichtigungen", passwordChangePath,
 ];
 
 // Proxy hinter Vercel/Reverse-Proxy: öffentlichen Host und Protokoll für Weiterleitungen verwenden.
@@ -55,7 +55,10 @@ export const authConfig = {
       }
 
       const { role, permissions } = auth.user;
-      return canAccessPage({ role, permissions: permissions ?? {} }, path);
+      if (!canAccessPage({ role, employeeId: auth.user.employeeId, permissions: permissions ?? {} }, path)) {
+        return Response.redirect(new URL("/", publicRequestUrl(request)));
+      }
+      return true;
     },
   },
 } satisfies NextAuthConfig;

@@ -5,7 +5,7 @@ import { requirePageAccess } from "@/lib/page-access";
 import { performanceDashboardLink, performanceVisibility } from "@/lib/performance-rules";
 
 export const metadata: Metadata = {
-  title: "Personalbesetzung | Mitarbeiter-App",
+  title: "Personalbesetzung | TeamPlan",
   description: "Tages- und Wochenübersicht der Personalbesetzung.",
 };
 

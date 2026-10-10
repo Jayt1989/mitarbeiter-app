@@ -54,6 +54,8 @@ test("users with a start password can only reach the password page", async () =>
 test("regular sessions keep the existing route rules", async () => {
   assert.equal(await check("/dashboard", user()), true);
   assert.equal(await check("/profil", user()), true);
-  assert.equal(await check("/admin", user()), false);
+  const denied = await check("/admin", user());
+  assert.ok(denied instanceof Response);
+  assert.equal(denied.headers.get("location"), "https://app.example/");
   assert.equal(await check("/admin", user({ role: "ADMIN", permissions: { openAdmin: true } })), true);
 });

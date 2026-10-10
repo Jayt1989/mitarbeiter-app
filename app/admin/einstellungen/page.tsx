@@ -3,7 +3,7 @@ import CalendarSettings from "../calendar-settings";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Feiertage & Kalender | Mitarbeiter-App",
+  title: "Feiertage & Kalender | TeamPlan",
   description: "Bundesland, gesetzliche Feiertage und betriebliche Sondertage verwalten.",
 };
 

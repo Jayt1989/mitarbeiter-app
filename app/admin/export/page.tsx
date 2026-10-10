@@ -3,7 +3,7 @@ import ExportCenter from "../export-center";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Export | Mitarbeiter-App",
+  title: "Export | TeamPlan",
   description: "Wochen- und Jahrespläne, Urlaub, Abwesenheiten und Besetzung als PDF oder Excel exportieren.",
 };
 

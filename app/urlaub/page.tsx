@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { employeeRelations, toEmployeeDto } from "@/lib/employee-mapper";
 
 export const metadata: Metadata = {
-  title: "Urlaub | Mitarbeiter-App",
+  title: "Urlaub | TeamPlan",
   description: "Urlaubstage ansehen und Urlaub beantragen.",
 };
 

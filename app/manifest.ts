@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Mitarbeiter-App",
-    short_name: "Mitarbeiter",
+    name: "TeamPlan",
+    short_name: "TeamPlan",
     description: "Dein Teamportal für Schichtplan, Urlaub und Mitarbeiter.",
     lang: "de",
     dir: "ltr",

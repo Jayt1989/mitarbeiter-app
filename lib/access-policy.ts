@@ -1,8 +1,8 @@
-type AccessContext = { role: string; permissions: Record<string, boolean> };
+export type AccessContext = { role: string; permissions: Record<string, boolean>; employeeId?: string | null };
 
 const ownPermissions = new Set([
   "ownShiftPlan", "requestVacation", "ownVacation", "ownQualifications",
-  "requestShiftSwap", "recordPerformance",
+  "requestShiftSwap", "recordPerformance", "receiveMessages", "replyMessages",
 ]);
 const adminPermissions = new Set(["openAdmin", "editEmployees"]);
 
@@ -18,11 +18,20 @@ export function permitted(context: AccessContext, permission: string) {
   return effectivePermissions(context.role, context.permissions)[permission] === true;
 }
 
+export function canViewStaffing(context: AccessContext) {
+  return context.role === "ADMIN" && permitted(context, "openAdmin") &&
+    (permitted(context, "viewEmployees") || permitted(context, "editEmployees"));
+}
+
 export function canAccessPage(context: AccessContext, path: string) {
+  path = path.split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
   const has = (key: string) => permitted(context, key);
   const at = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
   const manager = context.role === "ADMIN" || context.role === "FOREMAN";
-  if (at("/admin/zusatzschichten")) return manager && has("viewAdditionalShifts");
+  if (at("/admin/mitarbeiter")) return manager && (has("viewEmployees") || has("editEmployees"));
+  if (at("/admin/zusatzschichten")) return manager && [
+    "viewAdditionalShifts", "planAdditionalShifts", "releaseAdditionalShifts", "cancelAdditionalShifts",
+  ].some(has);
   if (at("/admin/leistung/arbeitsplaetze")) return manager && has("managePerformanceTargets");
   if (at("/admin/leistung")) return manager && has("viewPerformance");
   if (at("/admin/schichttausch")) return manager && has("approveShiftSwap");
@@ -38,9 +47,15 @@ export function canAccessPage(context: AccessContext, path: string) {
     (has("openAdmin") && (has("viewEmployees") || has("editEmployees"))));
   if (at("/admin")) return context.role === "ADMIN" && has("openAdmin");
   if (at("/mitarbeiter")) return manager && (has("viewEmployees") || has("editEmployees"));
-  if (at("/schichtplan")) return has("ownShiftPlan") || has("teamShiftPlan");
-  if (at("/schichttausch")) return has("requestShiftSwap");
-  if (at("/leistung")) return has("recordPerformance");
-  if (at("/urlaub")) return has("requestVacation") || has("ownVacation") || has("otherVacations");
+  if (at("/schichtplan")) return (context.employeeId !== null && has("ownShiftPlan")) || has("teamShiftPlan");
+  if (at("/schichttausch")) return context.employeeId !== null && has("requestShiftSwap");
+  if (at("/leistung")) return context.employeeId !== null && has("recordPerformance");
+  if (at("/nachrichten")) return has("receiveMessages") ||
+    (manager && has("viewSentMessages"));
+  if (at("/urlaub")) return (context.employeeId !== null && (has("requestVacation") || has("ownVacation"))) || has("otherVacations");
+  if (at("/dashboard")) return context.employeeId !== null && [
+    "ownShiftPlan", "requestVacation", "ownVacation", "ownQualifications",
+    "recordPerformance", "requestShiftSwap",
+  ].some(has);
   return true;
 }

@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { redirect } from "next/navigation";
+import Link from "@/app/components/access-link";
 import type { ReactNode } from "react";
 import NotificationBell from "@/app/components/notification-bell";
 import AchievementBadge from "@/app/leistung/achievement-badge";
 import { isValidDateKey } from "@/app/admin/assignments-data";
-import { getAuthorizationContext } from "@/lib/authorization";
+import { requirePageAccess } from "@/lib/page-access";
 import { berlinTodayKey, dateKeyToUtc } from "@/lib/calendar";
 import { listPerformance, listPerformanceWorkstations } from "@/lib/performance";
 import { getExportAccess } from "@/lib/export/access";
@@ -13,7 +12,6 @@ import {
   MAX_REPORT_DAYS,
   canRecordPerformance,
   canManagePerformanceTargets,
-  canViewPerformance,
   formatDuration,
   parsePerformanceFilter,
   performanceAreas,
@@ -22,7 +20,7 @@ import {
   type PerformanceSummary,
 } from "@/lib/performance-rules";
 
-export const metadata: Metadata = { title: "Leistungsauswertung | Mitarbeiter-App" };
+export const metadata: Metadata = { title: "Leistungsauswertung | TeamPlan" };
 
 const shortDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 const timeFormat = new Intl.DateTimeFormat("de-DE", { timeStyle: "short", timeZone: "Europe/Berlin" });
@@ -36,9 +34,7 @@ const fieldClass =
 export default async function PerformanceReportPage({ searchParams }: {
   searchParams: Promise<{ von?: string; bis?: string; bereich?: string; schicht?: string }>;
 }) {
-  const context = await getAuthorizationContext();
-  if (!context) redirect("/login");
-  if (!canViewPerformance(context)) redirect("/dashboard");
+  const context = await requirePageAccess("/admin/leistung");
 
   const filter = parsePerformanceFilter(await searchParams, berlinTodayKey(), isValidDateKey);
   const [rows, workstations] = await Promise.all([listPerformance(filter), listPerformanceWorkstations()]);
@@ -61,15 +57,15 @@ export default async function PerformanceReportPage({ searchParams }: {
       <header className="border-b border-[#dce4dc] bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-8">
           <Link href="/" className="flex shrink-0 items-center gap-3 rounded-lg">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="hidden text-sm font-semibold sm:inline">MITARBEITERPORTAL</span>
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">TP</span>
+            <span className="hidden text-sm font-semibold sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Hauptnavigation">
             {canManagePerformanceTargets(context) && (
               <Link href="/admin/leistung/arbeitsplaetze" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Sollwerte bearbeiten</Link>
             )}
             {context.role === "ADMIN" && context.permissions.openAdmin === true && (
-              <Link href="/admin" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Personalbesetzung</Link>
+              <Link staffing href="/admin" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Personalbesetzung</Link>
             )}
             {canRecordPerformance(context) && (
               <Link href="/leistung" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Leistung erfassen</Link>

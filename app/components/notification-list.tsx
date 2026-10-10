@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import { useNotifications, type NotificationFeed } from "./notifications-provider";
 
 export function NotificationStatus() {

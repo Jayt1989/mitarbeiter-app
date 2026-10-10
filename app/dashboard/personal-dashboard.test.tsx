@@ -5,9 +5,16 @@ import { sampleEmployees } from "@/app/mitarbeiter/data";
 import { NotificationsProvider } from "@/app/components/notifications-provider";
 import type { PersonalDashboardData } from "@/lib/personal-dashboard";
 import { performanceVisibility } from "@/lib/performance-rules";
+import { canUseMessages } from "@/lib/message-rules";
 import PersonalDashboard from "./personal-dashboard";
+import AccessProvider from "@/app/components/access-provider";
+import { effectivePermissions } from "@/lib/access-policy";
 
 function dashboard(role: string, permissions: Record<string, boolean>) {
+  const access = {
+    userId: "u", employeeId: "e", role,
+    permissions: effectivePermissions(role, { ownShiftPlan: true, requestVacation: true, ...permissions }),
+  };
   const data: PersonalDashboardData = {
     greeting: "Guten Tag", todayKey: "2026-10-10", employee: sampleEmployees[2],
     areaName: null, shiftModelLabel: "Nur Früh", today: null, nextShift: null, week: [],
@@ -15,10 +22,11 @@ function dashboard(role: string, permissions: Record<string, boolean>) {
     permissions: {
       shiftPlan: false, yearPlan: true, ownVacation: false, requestVacation: true,
       qualifications: false, shiftSwap: false,
+      messages: canUseMessages({ userId: "u", employeeId: "e", login: "TEST", role, permissions }),
       ...performanceVisibility({ userId: "u", employeeId: "e", login: "TEST", role, permissions }),
     },
   };
-  return renderToStaticMarkup(<NotificationsProvider><PersonalDashboard data={data} /></NotificationsProvider>);
+  return renderToStaticMarkup(<AccessProvider initialAccess={access}><NotificationsProvider><PersonalDashboard data={data} /></NotificationsProvider></AccessProvider>);
 }
 
 test("Mitarbeiter-Kachel Leistung verlinkt direkt zur Erfassung und nutzt den bestehenden responsiven Kachelstil", () => {
@@ -42,4 +50,14 @@ test("Admin-Kachel Leistung führt zur Auswertung; Vorarbeiter sehen nur freigeg
   assert.doesNotMatch(recordingOnly, /\/admin\/leistung/);
   const noPerformance = dashboard("FOREMAN", {});
   assert.doesNotMatch(noPerformance, /href="\/(?:admin\/)?leistung/);
+});
+
+test("Nachrichten-Kachel übernimmt Schichtplan-/Urlaub-Stil und bleibt ohne Nachrichtenrechte verborgen", () => {
+  const html = dashboard("EMPLOYEE", { receiveMessages: true, replyMessages: true });
+  const tiles = html.slice(html.indexOf('<h2 id="schnellzugriffe-titel"'));
+  assert.match(tiles, /href="\/nachrichten"[^>]*><p[^>]*>Nachrichten<\/p>/);
+  const tileClass = (href: string) => tiles.match(new RegExp(`<a(?=[^>]*href="${href}")[^>]*class="([^"]+)"`))?.[1];
+  assert.equal(tileClass("/nachrichten"), tileClass("/schichtplan"));
+  assert.equal(tileClass("/nachrichten"), tileClass("/urlaub\\?antrag=neu"));
+  assert.doesNotMatch(dashboard("EMPLOYEE", {}), /href="\/nachrichten"/);
 });

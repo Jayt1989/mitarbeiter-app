@@ -5,8 +5,8 @@ import { employeeRelations, fromShiftCode, toEmployeeDto, toShiftCode } from "./
 import { toEmployeeShiftPlan } from "@/app/mitarbeiter/schedule";
 import { getShiftForDate } from "@/app/schichtplan/rotation";
 import { berlinTodayKey, dateKeyToUtc } from "./calendar";
-import { notificationDate } from "./notification-messages";
-import { createNotification } from "./notifications";
+import { notificationDate, swapApprovalNotification } from "./notification-messages";
+import { createNotification, notifyUsersWithPermission } from "./notifications";
 import { recordAuditLog } from "./audit";
 import {
   canRequestShiftSwaps, canReviewShiftSwaps, openSwapStatuses,
@@ -44,7 +44,7 @@ export type ShiftSwapDto = ReturnType<typeof toSwapDto>;
 
 type SwapDatabase = Pick<Prisma.TransactionClient,
   "employee" | "vacationRequest" | "absence" | "temporaryAssignment" | "shiftSwapRequest" |
-  "shiftAssignment" | "notification" | "auditLog"
+  "shiftAssignment" | "notification" | "auditLog" | "user"
 >;
 
 function assertDate(date: Date) {
@@ -215,6 +215,12 @@ export async function decideSwap(
       action === "confirm" ? "SWAP_PARTNER_CONFIRMED" : "SWAP_PARTNER_REJECTED",
       action === "confirm" ? `${partnerName} hat zugestimmt. Die Freigabe durch Admin/Vorarbeiter steht noch aus.`
         : `${partnerName} hat die Anfrage abgelehnt. Deine Schicht bleibt unverändert.`);
+    if (action === "confirm") {
+      await notifyUsersWithPermission(db, "approveShiftSwap", (userId) =>
+        swapApprovalNotification(userId, {
+          id: swap.id, requesterName, partnerName,
+        }));
+    }
   } else if (action === "cancel") {
     await notifySwap(db, swap, swap.partnerId, "SWAP_CANCELLED",
       `${requesterName} hat die Anfrage storniert. Deine Schicht bleibt unverändert.`);

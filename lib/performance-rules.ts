@@ -111,9 +111,6 @@ export function performanceDashboardLink(access: ReturnType<typeof performanceVi
 
 export function performanceHomeLink(context: AuthorizationContext | null) {
   if (!context) return null;
-  if (context.role === "ADMIN") {
-    return { href: "/admin/leistung", title: "Leistung", text: "Erfasste Leistungen auswerten" };
-  }
   return performanceDashboardLink(performanceVisibility(context));
 }
 

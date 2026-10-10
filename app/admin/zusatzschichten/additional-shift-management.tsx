@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import { refreshNotifications } from "@/app/components/notification-events";
 import { apiJson } from "@/lib/api-client";
@@ -86,7 +86,7 @@ export default function AdditionalShiftManagement({ permissions }: { permissions
   const visible = entries.filter((entry) => filter === "ALLE" || (filter === "AKTIV" ? entry.status !== "STORNIERT" : entry.status === filter));
   return <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">
     <header className="border-b border-[#dce4dc] bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-8">
-      <Link href="/" className="font-semibold text-[#174c37]">MITARBEITERPORTAL</Link>
+      <Link href="/" className="font-semibold text-[#174c37]">TeamPlan</Link>
       <nav className="flex items-center gap-2"><Link href="/dashboard" className="px-3 py-2 text-sm">Dashboard</Link><NotificationBell /></nav>
     </div></header>
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">

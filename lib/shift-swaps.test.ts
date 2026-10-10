@@ -62,6 +62,7 @@ function fixture(status: "ANGEFRAGT" | "PARTNER_BESTAETIGT" = "ANGEFRAGT") {
     shiftAssignment: { ...prisma.shiftAssignment, upsert: prisma.shiftAssignment.upsert },
     notification: { ...prisma.notification, create: prisma.notification.create },
     auditLog: { ...prisma.auditLog, create: prisma.auditLog.create },
+    user: { ...prisma.user, findMany: prisma.user.findMany },
   };
   const state = { employees: [employee("a", "nur-frueh"), employee("b", "nur-spaet")], swap: record(status) };
   mock.method(db.employee, "findMany", async () => state.employees);
@@ -80,7 +81,8 @@ function fixture(status: "ANGEFRAGT" | "PARTNER_BESTAETIGT" = "ANGEFRAGT") {
   const shifts = mock.method(db.shiftAssignment, "upsert", async () => ({}));
   const notifications = mock.method(db.notification, "create", async () => ({}));
   const audit = mock.method(db.auditLog, "create", async () => ({}));
-  return { db, state, create, update, shifts, notifications, audit };
+  const userFindMany = mock.method(db.user, "findMany", async () => []);
+  return { db, state, create, update, shifts, notifications, audit, userFindMany };
 }
 
 test("creation captures both original shifts and notifies only the partner without altering shifts", async () => {
@@ -105,6 +107,41 @@ test("partner consent updates state and audit but never writes either shift", as
   assert.equal(required(f.notifications.mock.calls[0].arguments[0]).data.type, "SWAP_PARTNER_CONFIRMED");
   assert.equal(required(f.notifications.mock.calls[0].arguments[0]).data.employeeId, "a");
   assert.ok(f.update.mock.calls[0].arguments[0].data.partnerDecidedAt instanceof Date);
+});
+
+test("partner confirmation notifies only active users with approveShiftSwap", async () => {
+  const f = fixture();
+  mock.method(f.db.user, "findMany", async () => [
+    {
+      id: "reviewer-admin",
+      role: { code: "ADMIN", permissions: [{ allowed: true, permission: { key: "approveShiftSwap" } }] },
+      employee: null,
+    },
+    {
+      id: "reviewer-foreman",
+      role: { code: "FOREMAN", permissions: [{ allowed: true, permission: { key: "approveShiftSwap" } }] },
+      employee: { permissions: [] },
+    },
+    { id: "no-right", role: { code: "FOREMAN", permissions: [] }, employee: { permissions: [] } },
+  ]);
+  await decideSwap(f.db, partner, "swap-1", "confirm");
+  assert.deepEqual(f.notifications.mock.calls.map((call) => required(call.arguments[0]).data), [
+    {
+      employeeId: "a", title: "Schichttausch",
+      message: "Schichttausch am 15.06.2099: Ben Test hat zugestimmt. Die Freigabe durch Admin/Vorarbeiter steht noch aus.",
+      type: "SWAP_PARTNER_CONFIRMED", link: "/schichttausch",
+    },
+    {
+      userId: "reviewer-admin", title: "Schichttausch wartet auf Freigabe",
+      message: "Schichttausch von Anna Test und Ben Test wartet auf Freigabe.",
+      type: "SWAP_AWAITING_APPROVAL", link: "/admin/schichttausch#swap-swap-1",
+    },
+    {
+      userId: "reviewer-foreman", title: "Schichttausch wartet auf Freigabe",
+      message: "Schichttausch von Anna Test und Ben Test wartet auf Freigabe.",
+      type: "SWAP_AWAITING_APPROVAL", link: "/admin/schichttausch#swap-swap-1",
+    },
+  ]);
 });
 
 test("approval writes exactly two opposite MANUAL assignments for just the requested date", async () => {
@@ -136,6 +173,7 @@ for (const [action, status, actor, notificationType] of [
     await decideSwap(f.db, actor, "swap-1", action);
     assert.equal(f.shifts.mock.callCount(), 0);
     assert.equal(required(f.notifications.mock.calls[0].arguments[0]).data.type, notificationType);
+    assert.equal(f.userFindMany.mock.callCount(), 0);
     assert.equal(required(f.audit.mock.calls[0].arguments[0]).data.action, `shift_swap.${action}`);
   });
 }

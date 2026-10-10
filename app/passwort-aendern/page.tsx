@@ -7,7 +7,7 @@ import { LogoutButton } from "@/app/components/password-field";
 import InitialPasswordForm, { PasswordChangedNotice } from "./initial-password-form";
 
 export const metadata: Metadata = {
-  title: "Neues Passwort festlegen | Mitarbeiter-App",
+  title: "Neues Passwort festlegen | TeamPlan",
 };
 
 function changedWithinLastMinute(changedAt: Date | null) {
@@ -30,10 +30,10 @@ export default async function PasswordChangePage() {
       <section className="w-full max-w-md rounded-xl border border-[#e0e7e0] bg-white p-6 shadow-[0_8px_30px_rgba(28,43,35,0.07)] sm:p-8">
         <div className="mb-6 flex items-center gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
-            MA
+            TP
           </span>
           <div>
-            <p className="text-xs font-semibold tracking-[0.1em] text-[#668071]">MITARBEITERPORTAL</p>
+            <p className="text-xs font-semibold tracking-[0.1em] text-[#668071]">TeamPlan</p>
             <h1 className="mt-0.5 text-xl font-semibold">Neues Passwort festlegen</h1>
           </div>
         </div>

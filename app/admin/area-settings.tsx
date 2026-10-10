@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import { staffedShifts } from "./staffing";
 import { areaRepository } from "./areas-repository";
@@ -136,9 +136,9 @@ export default function AreaSettings() {
     <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">
       <header className="border-b border-[#dce4dc] bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-8">
-          <Link href="/admin" className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">MITARBEITERPORTAL</span>
+          <Link href="/" className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">TP</span>
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex items-center gap-2" aria-label="Hauptnavigation">
             <Link href="/admin" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Zurück zum Admin</Link>

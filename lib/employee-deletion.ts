@@ -71,7 +71,7 @@ export async function analyzeEmployeeDeletion(
     openOrClosedSwaps, approvedSwaps, rotationAssignments, vacationAccounts, qualifications,
     permissions, departments, notifications, auditAboutEmployee, auditByUser,
     decidedForOthers, absencesForOthers, assignmentsForOthers, companyDays, reviewedSwaps,
-    performanceEntries, additionalShifts, additionalActions,
+    performanceEntries, additionalShifts, additionalActions, messageParticipations,
   ] = await Promise.all([
     db.vacationRequest.count({ where: { employeeId } }),
     db.vacationRequest.count({ where: { employeeId, status: "APPROVED" } }),
@@ -85,7 +85,7 @@ export async function analyzeEmployeeDeletion(
     db.employeeQualification.count({ where: { employeeId } }),
     db.employeePermission.count({ where: { employeeId } }),
     db.employeeDepartment.count({ where: { employeeId } }),
-    db.notification.count({ where: { employeeId } }),
+    db.notification.count({ where: { OR: [{ employeeId }, ...(userId ? [{ userId }] : [])] } }),
     db.auditLog.count({
       where: { OR: [{ entityId: employeeId }, ...(userId ? [{ entityId: userId }] : [])] },
     }),
@@ -98,6 +98,7 @@ export async function analyzeEmployeeDeletion(
     db.performanceEntry.count({ where: { employeeId } }),
     db.additionalShift.count({ where: { employeeId } }),
     userId ? db.additionalShift.count({ where: { OR: [{ createdById: userId }, { releasedById: userId }] } }) : none,
+    db.messageParticipant.count({ where: { OR: [{ employeeId }, ...(userId ? [{ userId }] : [])] } }),
   ]);
 
   const blockers: DeletionBlocker[] = [];
@@ -155,6 +156,7 @@ export async function analyzeEmployeeDeletion(
   const retained: DeletionImpactItem[] = [
     { key: "auditLogs", label: "Audit-Log-Einträge (bleiben unverändert erhalten)", count: auditAboutEmployee + auditByUser },
     { key: "additionalShifts", label: "Zusatzschichten (Historie bleibt erhalten; nur Deaktivierung möglich)", count: additionalShifts },
+    { key: "messageThreads", label: "Nachrichtenverläufe (Historie mit Namens-Snapshots bleibt erhalten)", count: messageParticipations },
   ].filter((item) => item.count > 0);
 
   const fingerprint = [...historical, ...removed].map((item) => `${item.key}:${item.count}`).join("|");

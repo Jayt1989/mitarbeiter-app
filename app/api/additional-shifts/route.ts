@@ -5,6 +5,7 @@ import { getAuthorizationContext } from "@/lib/authorization";
 import { prisma } from "@/lib/prisma";
 import { AdditionalShiftError, additionalShiftBatch, additionalShiftInput, requireAdditionalShift } from "@/lib/additional-shift-rules";
 import { additionalShiftDto, additionalShiftRelations, changeAdditionalShift, checkAdditionalShifts, createAdditionalShifts } from "@/lib/additional-shifts";
+import { canAccessPage } from "@/lib/access-policy";
 
 const headers = { "Cache-Control": "private, no-store" };
 const operation = z.discriminatedUnion("action", [
@@ -27,7 +28,9 @@ export async function GET() {
   const context = await getAuthorizationContext();
   if (!context) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401, headers });
   try {
-    requireAdditionalShift(context, "viewAdditionalShifts");
+    if (!canAccessPage(context, "/admin/zusatzschichten")) {
+      throw new AdditionalShiftError("Keine Berechtigung für die Zusatzschicht-Verwaltung.", 403);
+    }
     const records = await prisma.additionalShift.findMany({ include: additionalShiftRelations,
       orderBy: [{ date: "desc" }, { createdAt: "desc" }] });
     return NextResponse.json(records.map(additionalShiftDto), { headers });

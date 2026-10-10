@@ -2,7 +2,7 @@
 
 import { apiJson } from "@/lib/api-client";
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import YearSelector from "../components/year-selector";
 import { calendarRepository } from "./calendar-repository";
@@ -117,11 +117,11 @@ export default function CalendarSettings() {
       <header className="border-b border-[#dce4dc] bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-8">
           <Link href="/" className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">MITARBEITERPORTAL</span>
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">TP</span>
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
-            <Link href="/admin" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Personalbesetzung</Link>
+            <Link staffing href="/admin" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Personalbesetzung</Link>
             <Link href="/admin/jahreswechsel" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Jahreswechsel</Link>
             <NotificationBell />
           </nav>

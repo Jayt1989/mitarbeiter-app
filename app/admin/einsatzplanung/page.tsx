@@ -3,7 +3,7 @@ import AssignmentPlanning from "../assignment-planning";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Einsatzplanung | Mitarbeiter-App",
+  title: "Einsatzplanung | TeamPlan",
   description: "Vertretungen und temporäre Einsätze in anderen Bereichen planen.",
 };
 

@@ -3,7 +3,7 @@ import EmployeeManagement from "./employee-management";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Mitarbeiterverwaltung | Mitarbeiter-App",
+  title: "Mitarbeiterverwaltung | TeamPlan",
   description: "Mitarbeiter, Schichtmodelle und Berechtigungen verwalten.",
 };
 

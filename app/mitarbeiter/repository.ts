@@ -1,6 +1,7 @@
 import type { Employee } from "./data";
 import { apiJson } from "@/lib/api-client";
 import { refreshNotifications } from "@/app/components/notification-events";
+import { refreshAuthorization } from "@/app/components/authorization-events";
 import type { EmployeeDeletionPreview } from "@/lib/employee-deletion";
 import type { EmployeeOverviewScope } from "@/lib/employee-overview";
 
@@ -42,6 +43,7 @@ export const employeeRepository: EmployeeRepository = {
       throw new Error(body?.error ?? "Die Mitarbeiterdaten konnten nicht gespeichert werden.");
     }
     refreshNotifications();
+    refreshAuthorization();
   },
 
   async createWithAccount(employee, startPassword) {
@@ -90,6 +92,7 @@ export const employeeRepository: EmployeeRepository = {
     if (!response.ok) {
       throw new Error(await errorMessage(response, "Der Mitarbeiter konnte nicht deaktiviert werden."));
     }
+    refreshAuthorization();
     return (await response.json()) as EmployeeDeletionPreview;
   },
 

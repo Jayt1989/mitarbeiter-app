@@ -1,3 +1,13 @@
+# TeamPlan
+
+Der sichtbare App-Name ist TeamPlan. Browser-Titel, Login, Header, Druckansicht,
+Excel-Absender sowie PWA- und Apple-Startbildschirm-Metadaten verwenden dieses
+Branding. Der technische Projektname `mitarbeiter-app` bleibt unverändert.
+Die Umbenennung benötigt keine Datenbankmigration; online genügt ein neuer
+Deploy. Bereits installierte PWAs können den alten Namen oder das alte Icon
+zwischenspeichern, insbesondere iOS-Startbildschirm-Verknüpfungen; gegebenenfalls
+die Verknüpfung entfernen und neu hinzufügen.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
@@ -35,6 +45,57 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+## Berechtigungsabhängige Navigation
+
+Startseiten-Kacheln, responsive Header, Querverweise und Benachrichtigungslinks
+verwenden dieselbe Seitenrichtlinie wie die serverseitigen Zugriffsprüfungen.
+Fehlende Rechte leiten auf `/` um; fehlende Anmeldung auf `/login`.
+Rollenrechte werden weiterhin durch Mitarbeiterrechte überschrieben; die
+bestehenden Rollenbegrenzungen bleiben erhalten. Der Rollenname ADMIN allein
+erteilt keine Funktionsrechte.
+
+| Kachel | Effektive Rechte / Ziel |
+| --- | --- |
+| Schichtplan | `ownShiftPlan` oder `teamShiftPlan` |
+| Urlaub | `requestVacation`, `ownVacation`, `otherVacations`; nur Freigaberecht: `approveVacation` → Admin-Urlaub |
+| Mitarbeiter | `viewEmployees` oder `editEmployees` |
+| Admin | `openAdmin` |
+| Qualifikationen | `viewQualifications`, `editQualifications`, `manageQualifications`; nur eigene: `ownQualifications` → persönliches Dashboard |
+| Leistung | `recordPerformance` mit Mitarbeiterzuordnung, `viewPerformance` oder `managePerformanceTargets` |
+| Nachrichten | `receiveMessages` oder `viewSentMessages`; Versand benötigt weiterhin das jeweilige `sendMessage*`-Recht und `viewSentMessages` |
+| Schichttausch | `requestShiftSwap` mit Mitarbeiterzuordnung oder `approveShiftSwap` |
+| Zusatzschichten | `viewAdditionalShifts`, `planAdditionalShifts`, `releaseAdditionalShifts` oder `cancelAdditionalShifts` für Verwaltung; eigene freigegebene Schichten über `ownShiftPlan` |
+
+Planen/Freigeben/Stornieren von Zusatzschichten bleibt separat durch
+`planAdditionalShifts`, `releaseAdditionalShifts`, `cancelAdditionalShifts`
+geschützt. Ein solches Bearbeitungsrecht öffnet auch die zugehörige
+Verwaltungsansicht; es schaltet keine der anderen Aktionen frei.
+Das persönliche Dashboard `/dashboard` ist kein automatischer Admin-Einstieg:
+Es benötigt eine Mitarbeiterzuordnung und mindestens ein eigenes Funktionsrecht.
+Jeder Abschnitt bleibt zusätzlich einzeln berechtigungsabhängig.
+Qualifikationswerte werden auch in den Schichtplan- und Mitarbeiter-API-Daten
+ohne passendes eigenes oder Team-Qualifikationsrecht entfernt; die fachliche
+Einsatzplanungsübersicht behält ihre benötigten Qualifikationsdaten.
+Personalbesetzung benötigt `openAdmin` und `viewEmployees` oder `editEmployees`;
+`openAdmin` allein zeigt nur freigeschaltete Verwaltungslinks, keine Besetzungsdaten.
+`/admin/mitarbeiter` verwendet dieselbe Mitarbeiterprüfung wie `/mitarbeiter`.
+
+Die Datenbankrechte werden bei jeder Serveranfrage neu gelesen. Bereits geöffnete
+Seiten prüfen die Sitzung zusätzlich alle fünf Sekunden, beim Fensterfokus und
+Seitenwechsel. Änderungen aus der Mitarbeiterverwaltung lösen sofort eine
+Prüfung im aktuellen Fenster und in anderen Tabs desselben Browsers aus.
+Änderungen aus einem anderen Browser werden spätestens beim nächsten
+Fünf-Sekunden-Abruf erkannt (keine Push-Verbindung). Während einer erkannten
+Rechteänderung werden alte Inhalte bis zur serverseitigen Aktualisierung
+ausgeblendet. Dafür sind keine Prisma-Änderung, Migration, Datenbereinigung oder
+erneutes Seeding erforderlich.
+
+Gezielte Prüfungen:
+
+```bash
+npx tsx --test lib/access-policy.test.ts lib/home-access.test.tsx lib/auth-gate.test.ts lib/performance-rules.test.ts lib/shift-plan.test.ts app/dashboard/personal-dashboard.test.tsx
+```
+
 ## In-App-Benachrichtigungen
 
 Die Glocke in der Navigation zeigt die Anzahl ungelesener Nachrichten und die
@@ -43,9 +104,17 @@ Nachrichten mit Einzel- und Sammelmarkierung als gelesen bereit. Das persönlich
 Dashboard zeigt zusätzlich die letzten drei Nachrichten.
 
 Benachrichtigungen entstehen beim Genehmigen/Ablehnen von Urlaub, bei geänderten
-manuellen Schichtzuweisungen, beim Anlegen/Ändern/Stornieren temporärer Einsätze
-und bei neu erworbenen Qualifikationen (Stufe 0/kein Eintrag auf Stufe 1–3).
-Unveränderte Speichervorgänge erzeugen keine neuen Nachrichten.
+manuellen Schichtzuweisungen, beim Anlegen/Ändern/Stornieren temporärer Einsätze,
+bei neu erworbenen Qualifikationen (Stufe 0/kein Eintrag auf Stufe 1–3) und bei
+neuen Urlaubsanträgen. Urlaubsanträge gehen nur an aktive Konten mit dem
+effektiven Recht `approveVacation`. Eine neue Tauschanfrage informiert den
+gewählten Tauschpartner; nach dessen Bestätigung erhalten aktive Konten mit dem
+effektiven Recht `approveShiftSwap` eine Freigabe-Benachrichtigung. Eine
+Ablehnung durch den Tauschpartner löst keine Admin-Benachrichtigung aus.
+`approveVacation` ist standardmäßig dem Admin vorbehalten; Vorarbeiter werden
+nur mit ausdrücklich wirksamem `approveVacation`-Recht benachrichtigt.
+`approveShiftSwap` ist standardmäßig für Admin und Vorarbeiter aktiviert.
+Unveränderte und wiederholte Speichervorgänge erzeugen keine neuen Nachrichten.
 Die bestehenden `ShiftAssignment`-Einträge mit Quelle `MANUAL` dienen auch als
 Overrides für rotierende Schichtmodelle; `Frei` wird dabei ebenfalls unterstützt.
 Die automatisch gespeicherte Rotation wird nicht als Override verwendet.
@@ -61,12 +130,13 @@ Andere Mitarbeiter sehen neue Nachrichten bei ihrem nächsten Abruf.
 Auch Schichttausch-Anfragen, Partnerentscheidungen, Freigaben, Ablehnungen und
 Stornierungen verwenden diese Nachrichten.
 
-`Notification` ist über `employeeId` dem Mitarbeiter zugeordnet (auch ohne
-bereits vorhandenes Login). Die API ermittelt diese ID ausschließlich aus der
-serverseitig geprüften Anmeldung. Adminrechte geben keinen Zugriff auf fremde
-Nachrichten. Benutzer ohne Mitarbeiterzuordnung sehen einen leeren Posteingang.
-Die optionale Verlinkung führt zu bestehenden Seiten; deren eigene
-Berechtigungsprüfungen gelten weiterhin.
+Persönliche Mitarbeiternachrichten bleiben über `employeeId` zugeordnet.
+Berechtigungsabhängige Freigabenachrichten werden direkt dem Benutzerkonto über
+`userId` zugeordnet, auch wenn kein Mitarbeiterkonto verknüpft ist. Die API
+ermittelt Empfänger und eigene IDs ausschließlich serverseitig; Adminrechte
+geben keinen Zugriff auf fremde Nachrichten. Die Verlinkung öffnet den
+betreffenden Urlaubsantrag bzw. Schichttausch; die Zielseiten prüfen weiterhin
+ihre Berechtigungen.
 
 ### Lokal
 
@@ -78,7 +148,7 @@ npx prisma validate
 npx prisma migrate dev
 npx prisma generate
 npm run lint
-npx tsx --test lib/notification-messages.test.ts lib/notifications.test.ts app/schichtplan/rotation.test.ts
+npx tsx --test lib/notification-messages.test.ts lib/notifications.test.ts lib/shift-swaps.test.ts app/schichtplan/rotation.test.ts
 npm run build
 npm run dev
 ```
@@ -93,10 +163,11 @@ node --env-file=.env.local node_modules/prisma/build/index.js migrate dev
 node --env-file=.env.local node_modules/prisma/build/index.js generate
 ```
 
-Die Migration `20261002120000_notifications` ist bereits enthalten. Sie fügt
-ausschließlich den Enum, die neue Tabelle, Indizes und einen Fremdschlüssel hinzu.
-Bestehende Daten werden nicht geändert oder gelöscht. Kein Reset und kein
-erneutes Seeding sind nötig. Sollte Prisma Drift melden oder einen Reset
+Die Migration `20261002120000_notifications` fügt die Benachrichtigungstabelle
+hinzu. `20261010160000_workflow_notifications` ergänzt Empfänger pro Benutzerkonto
+und neue Nachrichtentypen; vorhandene Mitarbeiternachrichten bleiben erhalten.
+Beide Migrationen ändern oder löschen keine Produktionsdaten. Kein Reset und
+kein erneutes Seeding sind nötig. Sollte Prisma Drift melden oder einen Reset
 vorschlagen, abbrechen und die Ursache untersuchen.
 
 ### Neon / Produktion / Vercel
@@ -113,6 +184,131 @@ Danach ist ein Vercel-Deploy des neuen Codes nötig. Der bestehende
 `postinstall`-Schritt erzeugt den Prisma-Client; `prisma migrate deploy` wird
 durch einen Vercel-Build nicht automatisch ausgeführt.
 Die Migration muss vor Aktivierung des neuen Codes angewendet sein.
+
+## Nachrichten und Informationen
+
+`/nachrichten` bietet Posteingang, Gesendet, persönliches Archiv und Filter für
+ungelesene, gelesene und wichtige Nachrichten. Die Nachrichten-Kachel auf
+Startseite, persönlichem Dashboard und Admin-Dashboard übernimmt das bestehende
+Design und zeigt einen individuellen Ungelesen-Badge. Die Glocke bleibt
+unverändert und zeigt zusätzlich neue Nachrichten und Antworten.
+
+### Private Verläufe und feste Empfänger
+
+Ein Versand an mehrere Mitarbeiter erstellt **je Mitarbeiter einen privaten
+Einzelverlauf mit dem Absender**. Andere Mitarbeiter können diese Antworten
+nicht lesen. `MessageDispatch` verbindet die Einzelverläufe mit einer gemeinsamen
+Versandaktion. `MessageThread`, `MessageParticipant` und `Message` speichern
+Betreff, Kennzeichnungen, Status, Teilnehmer und chronologische Antworten.
+
+Die Empfänger werden beim Absenden erneut serverseitig aufgelöst:
+
+- Einzel-/Mehrfachauswahl: ausgewählte Mitarbeiter-IDs.
+- Bereich: bestehende `EmployeeDepartment`-Zuordnungen zu einem aktiven
+  `Department`, auch zusätzliche Bereichszuordnungen.
+- Schicht: bestehende aktive `ShiftGroup` und `Employee.shiftGroupId` (z. B. A/B/C).
+  Die Auswahl ist ausdrücklich eine Schichtgruppe, keine tagesabhängige
+  Früh-/Spät-/Nacht-Besetzung.
+- Alle: alle aktiven, empfangsberechtigten Mitarbeiter; deaktivierte
+  Benutzerkonten sind ausgeschlossen.
+
+Das eigene Mitarbeiterkonto des Absenders wird nicht zusätzlich angeschrieben.
+Aktive Mitarbeiter ohne Login werden über ihre Mitarbeiter-ID aufgenommen und
+können nach Einrichtung ihres Kontos auf den Verlauf zugreifen. Der Versand
+verändert bestehende Bereichs-/Schichtzuordnungen nicht.
+
+Die tatsächlich ermittelten Mitarbeiter werden dauerhaft als Teilnehmer
+gespeichert. Spätere Bereichs-/Schichtgruppenwechsel verändern keine alten
+Verläufe. Eine vorab angezeigte Vorschau muss mit der aktuellen Empfängerliste
+übereinstimmen; andernfalls wird der Versand mit einer sichtbaren Fehlermeldung
+abgelehnt. „Alle“ erfordert zusätzlich eine Bestätigung der angezeigten Anzahl.
+
+### Rechte und Zugriff
+
+Neue Berechtigungen:
+
+| Schlüssel | Funktion |
+| --- | --- |
+| `receiveMessages` | Eigene empfangene Nachrichten lesen |
+| `replyMessages` | Eigene zugängliche Verläufe beantworten |
+| `sendMessageSingle` | Einzelversand |
+| `sendMessageMultiple` | Mehrfachversand |
+| `sendMessageDepartment` | Bereichsversand |
+| `sendMessageShift` | Schichtgruppenversand |
+| `sendMessageAll` | Rundnachricht an alle |
+| `viewSentMessages` | Eigene gesendete Verläufe lesen |
+| `completeMessages` | Eigene gesendete Verläufe erledigen / für beide archivieren |
+
+Admin erhält diese Rechte standardmäßig; Mitarbeiter und Vorarbeiter erhalten
+standardmäßig nur Empfang und Antwort. Vorarbeiter benötigen ausdrücklich die
+jeweiligen Senderrechte **und** `viewSentMessages`. Mitarbeiter können auch bei
+falsch gesetzten Senderrechten keine Adminfunktionen nutzen. Individuelle
+Mitarbeiterberechtigungen überschreiben Rollenrechte.
+
+Jeder API-Aufruf lädt aktuelle Rollen-/Mitarbeiterrechte aus der Datenbank.
+Listen und einzelne Verläufe sind zusätzlich durch persistierte Teilnehmer
+begrenzt. Fremde Thread-IDs liefern keinen Inhalt und erlauben weder Antworten
+noch Lese-, Archiv- oder Statusänderungen. Es gibt keine E-Mail-Funktion.
+
+### Status, gelesen, Antworten und Historie
+
+Neue Threads sind `OFFEN`, mit „Antwort erforderlich“ zunächst
+`WARTET_AUF_ANTWORT`. Eine Antwort setzt `BEANTWORTET`. Der berechtigte Absender
+kann `ERLEDIGT` setzen und erledigte Threads auf `ARCHIVIERT` setzen. Erledigte
+und global archivierte Threads erlauben keine weiteren Antworten.
+
+Jeder Teilnehmer besitzt eigene `read`, `readAt` und `archivedAt`-Werte.
+Der Badge zählt zugängliche ungelesene Threads, ausgenommen persönliche/global
+archivierte Threads. Eine Antwort setzt die anderen Teilnehmer wieder auf
+ungelesen (`readAt = null`) und holt den Verlauf aus deren persönlichem Archiv.
+„Für mich archivieren“ betrifft nur den aktuellen Teilnehmer.
+
+Antworten werden als neue `Message`-Datensätze gespeichert, nicht überschrieben.
+Eine eindeutige Sequenznummer pro Thread hält Antworten auch bei gleichen
+Zeitstempeln in der tatsächlichen Verlaufsreihenfolge.
+Leseaktionen prüfen die aktuelle Thread-Version, damit eine zwischenzeitliche
+Antwort nicht versehentlich als gelesen gilt. Nachrichten werden nicht hart
+gelöscht; Namens-Snapshots und `SetNull`-Verknüpfungen erhalten die Historie auch
+bei einer späteren, über bestehende Funktionen ausdrücklich bestätigten
+Mitarbeiterlöschung.
+
+Versand und Antworten verwenden stabile Anfragekennungen mit eindeutigen
+Datenbankindizes. Status, Teilnehmer, Nachrichten, Glocken-Benachrichtigungen und
+Audit-Einträge werden atomar in Serializable-Transaktionen gespeichert.
+Wiederholte identische Anfragen erzeugen keine doppelten Threads/Antworten.
+Audit-Logs enthalten Versandart/-anzahl und Statusänderungen, nicht zusätzlich
+die Nachrichteninhalte; Leseaktionen werden nicht protokolliert.
+
+### Migration und lokale Prüfung
+
+Migration: `20261010170000_private_messages`. Sie ergänzt die vier Modelle,
+Enums, Indizes, Fremdschlüssel und neue Rechte. Bestehende Daten bleiben erhalten.
+Die vorherige `20261010160000_workflow_notifications` wird ebenfalls benötigt.
+Kein Reset, kein Seed und kein Berechtigungs-Sync sind dafür erforderlich.
+
+Nur mit einer **lokalen** PostgreSQL-Verbindung in `.env.local` ausführen:
+
+```bash
+node --env-file=.env.local node_modules/prisma/build/index.js validate
+node --env-file=.env.local node_modules/prisma/build/index.js migrate deploy
+npm run db:generate
+npm run lint
+npm run build
+MESSAGES_DB_TESTS=1 node --env-file=.env.local --import tsx --test lib/message-rules.test.ts lib/messages.integration.test.ts
+MESSAGES_HTTP_TESTS=1 node --env-file=.env.local --import tsx --test lib/messages.http.integration.test.ts
+npm run dev
+```
+
+Die Datenbank-/HTTP-Tests akzeptieren ausschließlich lokale Datenbankhosts,
+erzeugen zufällig benannte eigene Schemas und entfernen nur diese Testschemas.
+Sie prüfen Migrationserhaltung, private A/B-Verläufe, Bereichs-/Schichtsnapshots,
+aktive Rundnachrichten, Lesezustände, Rechteentzug, IDOR, Antworten, Archivierung
+und parallele identische Versandaktionen. Der HTTP-Test benötigt einen aktuellen
+Build und nutzt temporär einen eigenen lokalen Next-Server.
+
+Neon benötigt später eine reguläre `prisma migrate deploy`-Ausführung in einer
+vertrauenswürdigen Umgebung **vor** Aktivierung dieses Codes. Während der
+Implementierung wurden weder Neon noch Vercel verändert.
 
 ## Schichttausch
 
@@ -193,6 +389,8 @@ Mitarbeiter-Overrides bleiben bestehen.
   für Mitarbeiter, Vorarbeiter und Admin.
 - `approveShiftSwap`: alle Tausche prüfen, genehmigen oder ablehnen; Standard
   für Admin und Vorarbeiter. Zusätzlich ist immer die passende Rolle erforderlich.
+- `approveVacation`: Urlaubsanträge genehmigen; Benachrichtigungen werden nur an
+  aktive Konten mit diesem effektiven Recht gesendet.
 
 Eigene und administrative Listen sind getrennt. Adminrechte geben weiterhin
 keinen Zugriff auf private Benachrichtigungen anderer Mitarbeiter.

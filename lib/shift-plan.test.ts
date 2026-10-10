@@ -63,6 +63,12 @@ test("own-plan rights alone do not authorize reading team staffing", async () =>
   await assert.rejects(loadShiftPlan(context, true, fixture()), /Keine Berechtigung/);
 });
 
+test("Teamplanrecht allein gewährt keine Personalbesetzung, auch nicht per manipuliertem API-Scope", async () => {
+  await assert.rejects(loadShiftPlan({
+    ...context, role: "FOREMAN", permissions: { teamShiftPlan: true },
+  }, true, fixture()), /Keine Berechtigung für die Personalbesetzung/);
+});
+
 test("requesting shift swaps does not implicitly grant plan-reading rights", async () => {
   await assert.rejects(loadShiftPlan({ ...context, permissions: { requestShiftSwap: true } }, false, fixture()), /Keine Berechtigung/);
 });

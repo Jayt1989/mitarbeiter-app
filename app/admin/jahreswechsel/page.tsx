@@ -3,7 +3,7 @@ import YearChange from "../year-change";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Jahreswechsel | Mitarbeiter-App",
+  title: "Jahreswechsel | TeamPlan",
   description: "Urlaubskonten für das neue Jahr anlegen und Resturlaub übertragen.",
 };
 

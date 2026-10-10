@@ -43,6 +43,15 @@ export type EmployeePermissions = {
   planAdditionalShifts: boolean;
   releaseAdditionalShifts: boolean;
   cancelAdditionalShifts: boolean;
+  receiveMessages: boolean;
+  replyMessages: boolean;
+  sendMessageSingle: boolean;
+  sendMessageMultiple: boolean;
+  sendMessageDepartment: boolean;
+  sendMessageShift: boolean;
+  sendMessageAll: boolean;
+  viewSentMessages: boolean;
+  completeMessages: boolean;
 };
 
 export const permissionOptions = [
@@ -77,6 +86,15 @@ export const permissionOptions = [
   { id: "planAdditionalShifts", label: "Zusatzschichten planen" },
   { id: "releaseAdditionalShifts", label: "Zusatzschichten freigeben" },
   { id: "cancelAdditionalShifts", label: "Zusatzschichten stornieren" },
+  { id: "receiveMessages", label: "Nachrichten empfangen und lesen" },
+  { id: "replyMessages", label: "Eigene Nachrichten beantworten" },
+  { id: "sendMessageSingle", label: "Nachricht an einzelne Mitarbeiter senden" },
+  { id: "sendMessageMultiple", label: "Nachricht an mehrere Mitarbeiter senden" },
+  { id: "sendMessageDepartment", label: "Nachricht an Bereich senden" },
+  { id: "sendMessageShift", label: "Nachricht an Schichtgruppe senden" },
+  { id: "sendMessageAll", label: "Nachricht an alle aktiven Mitarbeiter senden" },
+  { id: "viewSentMessages", label: "Eigene gesendete Nachrichten sehen" },
+  { id: "completeMessages", label: "Eigene gesendete Nachrichten erledigen und archivieren" },
 ] as const satisfies ReadonlyArray<{
   id: keyof EmployeePermissions;
   label: string;
@@ -145,6 +163,15 @@ function makePermissions(
     planAdditionalShifts: false,
     releaseAdditionalShifts: false,
     cancelAdditionalShifts: false,
+    receiveMessages: true,
+    replyMessages: true,
+    sendMessageSingle: false,
+    sendMessageMultiple: false,
+    sendMessageDepartment: false,
+    sendMessageShift: false,
+    sendMessageAll: false,
+    viewSentMessages: false,
+    completeMessages: false,
     ...overrides,
   };
 }

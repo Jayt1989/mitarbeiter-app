@@ -3,7 +3,7 @@ import WeekPlan from "../week-plan";
 import { requirePageAccess } from "@/lib/page-access";
 
 export const metadata: Metadata = {
-  title: "Wochenschichtplan | Mitarbeiter-App",
+  title: "Wochenschichtplan | TeamPlan",
   description: "A4-Wochenschichtplan mit tatsächlichem Einsatzbereich.",
 };
 

@@ -1,18 +1,20 @@
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
-import { getAuthorizationContext } from "@/lib/authorization";
+import { requirePageAccess } from "@/lib/page-access";
+import { homeDestinations } from "@/lib/home-access";
 import { performanceHomeLink } from "@/lib/performance-rules";
-import { canAdditionalShift } from "@/lib/additional-shift-rules";
+import MessageUnreadBadge from "@/app/components/message-unread-badge";
 
 export default async function Home() {
-  const context = await getAuthorizationContext();
+  const context = await requirePageAccess("/");
+  const destinations = homeDestinations(context);
   const performanceLink = performanceHomeLink(context);
   const areas = [
     {
       title: "Schichtplan",
       description: "Deine Dienste und Arbeitszeiten im Überblick.",
       label: "PLANUNG",
-      href: "/schichtplan",
+      href: destinations.shiftPlan,
       icon: (
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="3.5" y="5" width="17" height="16" rx="2" />
@@ -26,7 +28,7 @@ export default async function Home() {
       title: "Urlaub",
       description: "Abwesenheiten planen und Urlaubsanträge verwalten.",
       label: "FREIZEIT",
-      href: "/urlaub",
+      href: destinations.vacation,
       icon: (
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M4 18.5 20 5.5M5.5 7.5l3 3m5-5 3 3M10 17l3 3m2-5 3 3" />
@@ -40,7 +42,7 @@ export default async function Home() {
       title: "Mitarbeiter",
       description: "Lerne dein Team kennen und finde wichtige Kontakte.",
       label: "TEAM",
-      href: "/mitarbeiter",
+      href: destinations.employees,
       icon: (
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="9" cy="8" r="3" />
@@ -55,7 +57,7 @@ export default async function Home() {
       title: "Admin",
       description: "Verwaltung und Einstellungen für dein Unternehmen.",
       label: "VERWALTUNG",
-      href: "/admin",
+      href: destinations.admin,
       icon: (
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
@@ -78,13 +80,27 @@ export default async function Home() {
       color: "bg-[#e1f2e8] text-[#197044]",
       marker: "bg-[#3c9a69]",
     }] : []),
-    ...(context && canAdditionalShift(context, "viewAdditionalShifts") ? [{
-      title: "Zusatzschichten", description: "Wochenendarbeit planen und freigeben.",
-      label: "WOCHENENDARBEIT", href: "/admin/zusatzschichten",
+    ...(destinations.additionalShifts ? [{
+      title: "Zusatzschichten", description: "Eigene Zusatzschichten sehen oder Wochenendarbeit verwalten.",
+      label: "WOCHENENDARBEIT", href: destinations.additionalShifts,
       icon: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4m10-4v4M3 10h18m-9 3v6m-3-3h6" /></svg>,
       color: "bg-[#fff0df] text-[#b65d22]", marker: "bg-[#e58a45]",
     }] : []),
-  ];
+    ...(destinations.messages ? [{
+      title: "Nachrichten", description: "Informationen lesen und direkt im privaten Verlauf antworten.",
+      label: "KOMMUNIKATION", href: destinations.messages,
+      icon: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 6 9 7 9-7" /></svg>,
+      color: "bg-[#e1f2e8] text-[#197044]", marker: "bg-[#3c9a69]",
+    }] : []),
+    ...([
+      { title: "Qualifikationen", href: destinations.qualifications, description: "Freigeschaltete Qualifikationen im Überblick." },
+      { title: "Schichttausch", href: destinations.shiftSwap, description: "Eigene Tauschanfragen oder Freigaben verwalten." },
+    ].map((area) => ({
+      ...area, label: "DEIN BEREICH",
+      icon: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>,
+      color: "bg-[#e5eff9] text-[#316b9b]", marker: "bg-[#5d8eb8]",
+    }))),
+  ].filter((area) => area.href !== null);
 
   return (
     <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">
@@ -92,10 +108,10 @@ export default async function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
           <div className="flex items-center gap-3">
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
-              MA
+              TP
             </span>
             <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">
-              MITARBEITERPORTAL
+              TeamPlan
             </span>
           </div>
           <nav className="flex items-center gap-2" aria-label="Hauptnavigation">
@@ -113,7 +129,7 @@ export default async function Home() {
             WILLKOMMEN IN DEINEM TEAMPORTAL
           </p>
           <h1 className="relative mt-3 text-3xl font-semibold sm:text-5xl">
-            Mitarbeiter-App
+            TeamPlan
           </h1>
           <p className="relative mt-3 max-w-lg text-sm leading-6 text-[#d4e4d9] sm:text-base">
             Alles Wichtige für deinen Arbeitsalltag an einem Ort.
@@ -154,7 +170,7 @@ export default async function Home() {
                       {area.label}
                     </span>
                   </div>
-                  <h3 className="mt-5 text-lg font-semibold">{area.title}</h3>
+                  <h3 className="mt-5 text-lg font-semibold">{area.title}{area.href === "/nachrichten" && <MessageUnreadBadge />}</h3>
                   <p className="mt-1 max-w-sm text-sm leading-6 text-[#68766d]">
                     {area.description}
                   </p>

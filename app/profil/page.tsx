@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +8,7 @@ import { LogoutButton } from "@/app/components/password-field";
 import { logoutAction } from "./actions";
 import ChangePasswordForm from "./change-password-form";
 
-export const metadata: Metadata = { title: "Profil | Mitarbeiter-App" };
+export const metadata: Metadata = { title: "Profil | TeamPlan" };
 
 const dateFormat = new Intl.DateTimeFormat("de-DE", {
   dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Berlin",
@@ -47,8 +47,8 @@ export default async function ProfilePage({
       <header className="border-b border-[#dce4dc] bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-8">
           <Link href="/" className="flex shrink-0 items-center gap-3 rounded-lg">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">MA</span>
-            <span className="hidden text-sm font-semibold sm:inline">MITARBEITERPORTAL</span>
+            <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">TP</span>
+            <span className="hidden text-sm font-semibold sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2" aria-label="Hauptnavigation">
             <Link href="/dashboard" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Dashboard</Link>

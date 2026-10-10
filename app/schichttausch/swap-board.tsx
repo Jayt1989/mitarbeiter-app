@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import { useRouter } from "next/navigation";
 import type { ShiftSwapDto, SwapDay } from "@/lib/shift-swaps";
 import type { SwapStaffingPreview } from "@/lib/shift-swap-staffing";
@@ -262,7 +262,8 @@ export default function SwapBoard({ initialRequests, employeeId, review = false,
         {!visible.length && <p className="rounded-xl border border-[#e0e7e0] bg-white p-5 text-sm text-[#68766d]">Keine Tauschanfragen in dieser Ansicht.</p>}
         <ul className="space-y-4">
           {visible.map((swap) => (
-            <li key={swap.id} className="rounded-xl border border-[#e0e7e0] bg-white p-4 sm:p-6">
+            <li id={`swap-${swap.id}`} key={swap.id}
+              className="rounded-xl border border-[#e0e7e0] bg-white p-4 sm:p-6 target:border-[#174c37] target:ring-2 target:ring-[#174c37]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">{notificationDate(dateKeyToUtc(swap.date))}</h3>
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${swap.status === "GENEHMIGT" ? "bg-[#e7f3e9] text-[#256440]" : "bg-[#eef0ed] text-[#526056]"}`}>{swapStatusLabels[swap.status]}</span>

@@ -1,6 +1,7 @@
-import Link from "next/link";
+import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import NotificationSummary from "@/app/components/notification-summary";
+import MessageUnreadBadge from "@/app/components/message-unread-badge";
 import type { ReactNode } from "react";
 import type { DashboardDay, PersonalDashboardData } from "@/lib/personal-dashboard";
 import { performanceDashboardLink } from "@/lib/performance-rules";
@@ -54,6 +55,7 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
   const { employee, permissions } = data;
   const performanceLink = performanceDashboardLink(permissions);
   const quickLinks = [
+    permissions.messages && { href: "/nachrichten", title: "Nachrichten", text: "Informationen lesen und antworten" },
     permissions.additionalShifts && { href: "/admin/zusatzschichten", title: "Zusatzschichten", text: "Wochenendarbeit planen und freigeben" },
     performanceLink,
     permissions.performanceReport && permissions.performance && { href: "/leistung", title: "Leistung erfassen", text: "Menge und Arbeitszeit eintragen" },
@@ -76,9 +78,9 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
             className="flex items-center gap-3 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]"
           >
             <span className="flex size-10 items-center justify-center rounded-xl bg-[#174c37] text-sm font-bold text-white">
-              MA
+              TP
             </span>
-            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">MITARBEITERPORTAL</span>
+            <span className="hidden text-sm font-semibold tracking-[0.02em] sm:inline">TeamPlan</span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Hauptnavigation">
             {permissions.yearPlan && (
@@ -320,7 +322,7 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
                   const className = "rounded-xl border border-[#e0e7e0] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[#bdcfc1] hover:shadow-[0_10px_24px_rgba(28,43,35,0.08)] focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-[#174c37]";
                   const content = (
                     <>
-                      <p className="text-sm font-semibold">{link.title}</p>
+                      <p className="text-sm font-semibold">{link.title}{link.href === "/nachrichten" && <MessageUnreadBadge />}</p>
                       <p className="mt-1 text-xs text-[#77847b]">{link.text}</p>
                     </>
                   );
