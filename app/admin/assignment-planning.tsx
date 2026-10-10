@@ -1,17 +1,16 @@
 "use client";
 
+import { apiJson } from "@/lib/api-client";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
 import { toEmployeeShiftPlan } from "../mitarbeiter/schedule";
 import { getShiftForDate, type ActiveShift } from "../schichtplan/rotation";
 import type { VacationRequest } from "../urlaub/vacation-data";
-import { vacationRepository } from "../urlaub/vacation-repository";
 import { areaRepository } from "./areas-repository";
-import { sampleAreaConfiguration, type AreaConfiguration } from "./areas-data";
+import type { AreaConfiguration } from "./areas-data";
 import { qualificationsRepository } from "./qualifications-repository";
 import {
   qualificationLevelLabels,
@@ -87,8 +86,8 @@ function daysBetween(startDate: string, endDate: string) {
 }
 
 export default function AssignmentPlanning() {
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
-  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>(sampleAreaConfiguration);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
   const [qualifications, setQualifications] = useState<Qualification[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
   const [assignments, setAssignments] = useState<TemporaryAssignment[]>([]);
@@ -103,14 +102,12 @@ export default function AssignmentPlanning() {
     let isCurrent = true;
 
     void Promise.all([
-      employeeRepository.loadAll(),
+      employeeRepository.loadOverview("assignments"),
       areaRepository.load(),
-      qualificationsRepository.loadAll(),
-      vacationRepository.loadAll(),
+      qualificationsRepository.loadForAssignments(),
+      apiJson<{ vacations: VacationRequest[] }>("/api/shift-plan?scope=assignments").then((data) => data.vacations),
       assignmentRepository.loadAll(),
-      fetch("/api/session", { cache: "no-store" })
-        .then((response) => (response.ok ? response.json() : null))
-        .catch(() => null) as Promise<{ permissions?: Record<string, boolean> } | null>,
+      apiJson<{ permissions: Record<string, boolean> }>("/api/session"),
     ]).then(([storedEmployees, storedAreas, storedQualifications, storedRequests, storedAssignments, session]) => {
       if (!isCurrent) return;
       if (storedEmployees) setEmployees(storedEmployees);
@@ -119,6 +116,8 @@ export default function AssignmentPlanning() {
       setVacationRequests(storedRequests);
       setAssignments(storedAssignments);
       setCanEdit(session?.permissions?.editAssignments === true);
+    }).catch((error: unknown) => {
+      if (isCurrent) setMessage(error instanceof Error ? error.message : "Einsatzplanung konnte nicht geladen werden.");
     });
 
     return () => {

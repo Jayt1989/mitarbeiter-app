@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
-import { performanceAreas, type PerformanceAreaId } from "@/lib/performance-rules";
+import { performanceAreas, type PerformanceAreaId, type PerformanceWorkstation } from "@/lib/performance-rules";
 import { savePerformanceAction, type PerformanceFormState } from "./actions";
 
 const initialState: PerformanceFormState = { error: null, savedAt: null };
@@ -12,25 +12,32 @@ const inputClass =
   "mt-1.5 block min-h-12 w-full rounded-lg border border-[#cfdad1] bg-white px-3 text-base text-[#1c2b23] outline-none transition focus:border-[#174c37] focus:ring-3 focus:ring-[#174c37]/15";
 const labelClass = "block text-sm font-semibold text-[#2f4a3b]";
 
-function Choice({ name, value, checked, onChange, children }: {
-  name: string; value: string; checked: boolean; onChange: () => void; children: string;
+const numberFormat = new Intl.NumberFormat("de-DE");
+const soll = (target: number | null) => (target === null ? "Soll nicht hinterlegt" : `Soll ${numberFormat.format(target)}/Std.`);
+
+function Choice({ name, value, checked, onChange, hint, children }: {
+  name: string; value: string; checked: boolean; onChange: () => void; hint?: string; children: string;
 }) {
   return (
-    <label className={`flex min-h-12 cursor-pointer items-center justify-center rounded-lg border px-3 text-center text-sm font-semibold transition has-focus-visible:outline-3 has-focus-visible:outline-offset-2 has-focus-visible:outline-[#174c37] ${
+    <label className={`flex min-h-12 cursor-pointer flex-col items-center justify-center rounded-lg border px-2 py-1.5 text-center text-sm font-semibold transition has-focus-visible:outline-3 has-focus-visible:outline-offset-2 has-focus-visible:outline-[#174c37] ${
       checked ? "border-[#174c37] bg-[#174c37] text-white" : "border-[#cfdad1] bg-white text-[#2f4a3b] hover:bg-[#edf3ee]"
     }`}>
       <input type="radio" name={name} value={value} checked={checked} onChange={onChange} className="sr-only" />
       {children}
+      {hint && <span className={`text-[11px] font-medium ${checked ? "text-white/85" : "text-[#5e7366]"}`}>{hint}</span>}
     </label>
   );
 }
 
-export default function PerformanceForm() {
+export default function PerformanceForm({ workstations }: { workstations?: PerformanceWorkstation[] }) {
   const [state, formAction, isSubmitting] = useActionState(savePerformanceAction, initialState);
   const [form, setForm] = useState(emptyForm);
   const [lastHandledSave, setLastHandledSave] = useState<number | null>(null);
   const [showSaved, setShowSaved] = useState(false);
   const area = performanceAreas.find((entry) => entry.id === form.area) ?? null;
+  const showTargets = workstations !== undefined;
+  const targetFor = (code: string) => workstations?.find((entry) => entry.code === code)?.targetPerHour ?? null;
+  const target = targetFor(form.workstation);
 
   // Nach erfolgreichem Speichern Formular leeren; bei Fehlern bleiben die Eingaben erhalten.
   if (state.savedAt !== null && state.savedAt !== lastHandledSave) {
@@ -75,7 +82,7 @@ export default function PerformanceForm() {
           <div className="mt-2 grid grid-cols-3 gap-2">
             {area.workstations.map((workstation) => (
               <Choice key={workstation} name="workstation" value={workstation} checked={form.workstation === workstation}
-                onChange={() => update({ workstation })}>
+                onChange={() => update({ workstation })} hint={showTargets ? soll(targetFor(workstation)) : undefined}>
                 {workstation}
               </Choice>
             ))}
@@ -87,11 +94,22 @@ export default function PerformanceForm() {
         )}
       </fieldset>
 
+      {showTargets && form.workstation && target === null && (
+        <p role="status" className="rounded-lg border border-[#ecd9a8] bg-[#fff8e6] px-3 py-2 text-sm text-[#7a5a12]">
+          Für {form.workstation} ist kein Sollwert hinterlegt. Die Leistung wird ohne Sollwert und Leistungsgrad gespeichert.
+        </p>
+      )}
+
       <div>
         <label htmlFor="quantity" className={labelClass}>Menge</label>
         <input id="quantity" name="quantity" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
           value={form.quantity} onChange={(event) => update({ quantity: event.target.value })}
           className={inputClass} placeholder="z. B. 350" />
+        {showTargets && target !== null && (
+          <p className="mt-1.5 text-xs text-[#5e7366]">
+            Soll an {form.workstation}: <strong className="text-[#2f4a3b]">{numberFormat.format(target)} Stück/Std.</strong>
+          </p>
+        )}
       </div>
 
       <fieldset>

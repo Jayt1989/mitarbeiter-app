@@ -1,4 +1,5 @@
 import type { AuthorizationContext } from "./authorization";
+import { permitted } from "./access-policy";
 import type { Shift } from "@/app/schichtplan/rotation";
 
 export const performanceAreas = [
@@ -12,6 +13,58 @@ export const performanceAreaLabels: Record<PerformanceAreaId, string> = {
   PICKING: "Kommissionieren",
   PACKING: "Verpackung",
 };
+
+export type PerformanceWorkstation = {
+  code: string;
+  area: PerformanceAreaId;
+  targetPerHour: number | null;
+};
+
+export function canManagePerformanceTargets(context: AuthorizationContext) {
+  return (context.role === "ADMIN" || context.role === "FOREMAN") &&
+    permitted(context, "managePerformanceTargets");
+}
+
+export function parseWorkstationTarget(code: string, raw: string): number {
+  if (!performanceAreas.some((area) => (area.workstations as readonly string[]).includes(code))) {
+    throw new PerformanceError("Unbekannter Arbeitsplatz.");
+  }
+  const target = wholeNumber(raw, "Der Sollwert");
+  if (!Number.isSafeInteger(target) || target < 1 || target > 2_147_483_647) {
+    throw new PerformanceError("Der Sollwert muss zwischen 1 und 2.147.483.647 Stück/Std. liegen.");
+  }
+  return target;
+}
+
+/** Ab diesem Prozentsatz gilt das Soll als knapp verfehlt (gelb), darunter deutlich (rot). */
+export const ACHIEVEMENT_WARNING_PERCENT = 85;
+
+/** Erwartete Stückzahl für die gearbeitete Zeit. */
+export function expectedQuantity(targetPerHour: number, minutes: number) {
+  return (targetPerHour * minutes) / 60;
+}
+
+/** Zielerreichung in Prozent (Ist-Menge / Soll-Menge), ohne Soll `null`. */
+export function achievementPercent(quantity: number, expected: number) {
+  return expected > 0 ? Math.round((quantity / expected) * 1000) / 10 : null;
+}
+
+export function performanceMetrics(entry: {
+  quantity: number; durationMinutes: number; targetPerHour: number | null;
+}) {
+  return {
+    perHour: quantityPerHour(entry.quantity, entry.durationMinutes),
+    achievement: entry.targetPerHour === null ? null
+      : achievementPercent(entry.quantity, expectedQuantity(entry.targetPerHour, entry.durationMinutes)),
+  };
+}
+
+export type AchievementLevel = "reached" | "close" | "below";
+
+export function achievementLevel(percent: number): AchievementLevel {
+  if (percent >= 100) return "reached";
+  return percent >= ACHIEVEMENT_WARNING_PERCENT ? "close" : "below";
+}
 
 export const MAX_QUANTITY = 1_000_000;
 /** Obergrenze je Eintrag und Summe je Schichttag (16 Stunden). */
@@ -33,6 +86,35 @@ export function canRecordPerformance(context: AuthorizationContext) {
 export function canViewPerformance(context: AuthorizationContext) {
   return (context.role === "ADMIN" || context.role === "FOREMAN") &&
     context.permissions.viewPerformance === true;
+}
+
+export function performanceVisibility(context: AuthorizationContext) {
+  return {
+    performance: canRecordPerformance(context),
+    performanceReport: canViewPerformance(context),
+    performanceTargets: context.role !== "EMPLOYEE" && canManagePerformanceTargets(context),
+  };
+}
+
+export function performanceDashboardLink(access: ReturnType<typeof performanceVisibility>) {
+  if (access.performanceReport) {
+    return { href: "/admin/leistung", title: "Leistung", text: "Erfasste Leistungen auswerten" };
+  }
+  if (access.performance) {
+    return { href: "/leistung", title: "Leistung", text: "Aktuelle Menge und Arbeitszeit eintragen" };
+  }
+  if (access.performanceTargets) {
+    return { href: "/admin/leistung/arbeitsplaetze", title: "Leistung", text: "Soll-Stückzahlen pro Stunde pflegen" };
+  }
+  return null;
+}
+
+export function performanceHomeLink(context: AuthorizationContext | null) {
+  if (!context) return null;
+  if (context.role === "ADMIN") {
+    return { href: "/admin/leistung", title: "Leistung", text: "Erfasste Leistungen auswerten" };
+  }
+  return performanceDashboardLink(performanceVisibility(context));
 }
 
 export type PerformanceInput = {
@@ -137,24 +219,51 @@ export type PerformanceSummary = {
   quantity: number;
   durationMinutes: number;
   perHour: number;
+  /** Zeitgewichtetes Soll (Stück/Std.) über alle Einträge mit Soll. */
+  targetPerHour: number | null;
+  expectedQuantity: number;
+  achievement: number | null;
 };
 
-/** Summiert Menge und Zeit je Schlüssel, sortiert nach Menge absteigend. */
-export function summarizePerformance<T extends { quantity: number; durationMinutes: number }>(
+type SummaryRow = { quantity: number; durationMinutes: number; targetPerHour?: number | null };
+
+/** Summiert Ist, Zeit und Soll; die Zielerreichung berücksichtigt nur Einträge mit hinterlegtem Soll. */
+export function summarizeRows(rows: readonly SummaryRow[]) {
+  let quantity = 0, durationMinutes = 0, expected = 0, quantityWithTarget = 0, minutesWithTarget = 0;
+  for (const row of rows) {
+    quantity += row.quantity;
+    durationMinutes += row.durationMinutes;
+    if (row.targetPerHour) {
+      expected += expectedQuantity(row.targetPerHour, row.durationMinutes);
+      quantityWithTarget += row.quantity;
+      minutesWithTarget += row.durationMinutes;
+    }
+  }
+  return {
+    entries: rows.length,
+    quantity,
+    durationMinutes,
+    perHour: quantityPerHour(quantity, durationMinutes),
+    targetPerHour: minutesWithTarget > 0 ? Math.round((expected * 600) / minutesWithTarget) / 10 : null,
+    expectedQuantity: Math.round(expected),
+    achievement: achievementPercent(quantityWithTarget, expected),
+  };
+}
+
+/** Summiert je Schlüssel, sortiert nach Menge absteigend. */
+export function summarizePerformance<T extends SummaryRow>(
   rows: readonly T[],
   group: (row: T) => { key: string; label: string; detail?: string | null },
 ): PerformanceSummary[] {
-  const totals = new Map<string, PerformanceSummary>();
+  const groups = new Map<string, { key: string; label: string; detail: string | null; rows: T[] }>();
   for (const row of rows) {
     const { key, label, detail = null } = group(row);
-    const current = totals.get(key) ?? { key, label, detail, entries: 0, quantity: 0, durationMinutes: 0, perHour: 0 };
-    current.entries += 1;
-    current.quantity += row.quantity;
-    current.durationMinutes += row.durationMinutes;
-    totals.set(key, current);
+    const current = groups.get(key) ?? { key, label, detail, rows: [] };
+    current.rows.push(row);
+    groups.set(key, current);
   }
-  return [...totals.values()]
-    .map((entry) => ({ ...entry, perHour: quantityPerHour(entry.quantity, entry.durationMinutes) }))
+  return [...groups.values()]
+    .map(({ rows: groupRows, ...meta }) => ({ ...meta, ...summarizeRows(groupRows) }))
     .sort((a, b) => b.quantity - a.quantity || a.label.localeCompare(b.label, "de"));
 }
 

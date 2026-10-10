@@ -44,7 +44,7 @@ function ShiftCell({ cell, compact = false }: { cell: DayCell; compact?: boolean
   return (
     <td
       className={`${td} text-center font-semibold`}
-      title={marks || undefined}
+      title={[cell.additionalShift ? cell.label : "", marks].filter(Boolean).join(" · ") || undefined}
       style={{
         background: colors.bg,
         color: colors.fg,
@@ -54,7 +54,7 @@ function ShiftCell({ cell, compact = false }: { cell: DayCell; compact?: boolean
     >
       {compact ? cellShortLabels[cell.kind] + (cell.assignmentArea ? "*" : "") : cell.kind === "Nicht geplant" ? cell.label : cell.kind}
       {!compact && cell.assignmentArea && (
-        <span className="block text-[8px] font-medium leading-tight">Einsatz: {cell.assignmentArea}</span>
+        <span className="block text-[8px] font-medium leading-tight">{cell.additionalShift ? "Zusatzschicht" : "Einsatz"}: {cell.assignmentArea}</span>
       )}
     </td>
   );
@@ -113,6 +113,28 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
 }
 
 export default function PrintView({ result, createdAt }: { result: ExportResult; createdAt: string }) {
+  if (result.type === "performance") {
+    const { data } = result;
+    const rate = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return (
+      <>
+        <Header title="Leistungsauswertung"
+          lines={[`${formatDateDe(data.from)} – ${formatDateDe(data.to)} · Sollwerte zum Erfassungszeitpunkt`]}
+          createdAt={createdAt} />
+        <SimpleTable
+          headers={["Datum", "Mitarbeiter", "Personalnummer", "Schicht", "Bereich", "Arbeitsplatz", "Menge",
+            "Arbeitszeit (Min.)", "Soll Stück/Std.", "Ist Stück/Std.", "Leistungsgrad %", "Bemerkung"]}
+          rows={data.rows.map((row) => [
+            formatDateDe(row.workDate), row.employeeName, row.personnelNumber, row.shift, row.areaLabel,
+            row.workstation, row.quantity, row.durationMinutes, row.targetPerHour ?? "Nicht hinterlegt",
+            rate.format(row.perHour), row.achievement === null ? "Nicht hinterlegt" : `${rate.format(row.achievement)} %`,
+            row.note ?? "",
+          ])}
+        />
+      </>
+    );
+  }
+
   if (result.type === "week" || result.type === "staffing") {
     const { data } = result;
     const period = `KW ${data.week} · ${formatDateDe(data.monday)} – ${formatDateDe(data.sunday)}`;
@@ -176,7 +198,7 @@ export default function PrintView({ result, createdAt }: { result: ExportResult;
         ))}
         <Legend>
           Roter Rand oben = gesetzlicher Feiertag (Schicht bleibt bestehen) · Violetter Rand unten = betrieblicher Sondertag ·
-          „Einsatz“ = temporärer Einsatz in anderem Bereich
+          „Einsatz“ = temporärer Einsatz in anderem Bereich · „Zusatzschicht“ = freigegebene Wochenendarbeit
         </Legend>
       </>
     );
@@ -215,7 +237,7 @@ export default function PrintView({ result, createdAt }: { result: ExportResult;
         </table>
         <Legend>
           F = Früh · S = Spät · N = Nacht · fr = Frei · U = Urlaub · K = Krank · Sch = Schulung · SU = Sonderurlaub ·
-          FZA = Freizeitausgleich · Abw = sonstige Abwesenheit · * = temporärer Einsatz · roter Rand oben = Feiertag ·
+          FZA = Freizeitausgleich · Abw = sonstige Abwesenheit · * = temporärer Einsatz / Zusatzschicht · roter Rand oben = Feiertag ·
           violetter Rand unten = Sondertag
         </Legend>
         <div className="mt-3 grid grid-cols-2 gap-4 break-inside-avoid">
@@ -227,9 +249,9 @@ export default function PrintView({ result, createdAt }: { result: ExportResult;
             ])}
           />
           <SimpleTable
-            headers={["Temporärer Einsatz", "Von", "Bis", "Schicht"]}
+            headers={["Einsatz / Zusatzschicht", "Von", "Bis", "Schicht"]}
             rows={data.assignments.length > 0
-              ? data.assignments.map((entry) => [entry.areaName, formatDateDe(entry.startDate), formatDateDe(entry.endDate), entry.shift])
+              ? data.assignments.map((entry) => [entry.additionalShift ? `Zusatzschicht: ${entry.areaName}` : entry.areaName, formatDateDe(entry.startDate), formatDateDe(entry.endDate), entry.shift])
               : [["Keine Einsätze", "", "", ""]]}
           />
         </div>

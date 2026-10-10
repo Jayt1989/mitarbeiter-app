@@ -4,6 +4,9 @@ import { isValidDateKey } from "@/app/admin/assignments-data";
 import type { ActiveShift } from "@/app/schichtplan/rotation";
 import { isoWeekInfo } from "@/lib/calendar";
 import { getExportAccess } from "./access";
+import { listPerformance, type PerformanceReportRow } from "@/lib/performance";
+import { berlinTodayKey } from "@/lib/calendar";
+import { canViewPerformance, parsePerformanceFilter } from "@/lib/performance-rules";
 import { loadExportSource } from "./source";
 import {
   buildAbsenceExport,
@@ -18,7 +21,7 @@ import {
   type YearExport,
 } from "./model";
 
-export const exportTypes = ["week", "staffing", "year", "vacation", "absence"] as const;
+export const exportTypes = ["week", "staffing", "year", "vacation", "absence", "performance"] as const;
 export type ExportType = (typeof exportTypes)[number];
 
 export class ExportError extends Error {
@@ -32,7 +35,8 @@ export type ExportResult =
   | { type: "staffing"; fileBase: string; data: WeekExport }
   | { type: "year"; fileBase: string; data: YearExport }
   | { type: "vacation"; fileBase: string; data: VacationExport; withPeriods: boolean }
-  | { type: "absence"; fileBase: string; data: AbsenceExport };
+  | { type: "absence"; fileBase: string; data: AbsenceExport }
+  | { type: "performance"; fileBase: string; data: { from: string; to: string; rows: PerformanceReportRow[] } };
 
 type Params = { get(name: string): string | null };
 
@@ -53,6 +57,20 @@ export async function buildExport(context: AuthorizationContext, params: Params)
   const access = getExportAccess(context);
   const type = params.get("type") as ExportType | null;
   if (!type || !exportTypes.includes(type)) throw new ExportError(400, "Unbekannte Exportart.");
+
+  if (type === "performance") {
+    if (!access.team || !canViewPerformance(context)) {
+      throw new ExportError(403, "Für den Leistungsexport fehlt die Berechtigung.");
+    }
+    const filter = parsePerformanceFilter({
+      von: params.get("von") ?? undefined, bis: params.get("bis") ?? undefined,
+      bereich: params.get("bereich") ?? undefined, schicht: params.get("schicht") ?? undefined,
+    }, berlinTodayKey(), isValidDateKey);
+    return {
+      type, fileBase: `Leistungen_${filter.from}_${filter.to}`,
+      data: { from: filter.from, to: filter.to, rows: await listPerformance(filter) },
+    };
+  }
 
   if (type === "year") {
     const year = parseYear(params.get("year"));

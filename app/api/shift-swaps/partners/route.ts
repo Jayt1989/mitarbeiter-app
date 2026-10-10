@@ -28,6 +28,6 @@ export async function GET(request: Request) {
       })),
     }, { headers: swapPrivateHeaders });
   } catch (error) {
-    return shiftSwapResponseError(error);
+    return shiftSwapResponseError(error, context);
   }
 }

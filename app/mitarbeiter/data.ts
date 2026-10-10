@@ -1,4 +1,4 @@
-import type { Shift, ShiftModelId } from "../schichtplan/rotation";
+import type { ActiveShift, Shift, ShiftModelId } from "../schichtplan/rotation";
 
 export const employeeRoles = ["Mitarbeiter", "Vorarbeiter", "Admin"] as const;
 export type EmployeeRole = (typeof employeeRoles)[number];
@@ -38,6 +38,11 @@ export type EmployeePermissions = {
   approveShiftSwap: boolean;
   recordPerformance: boolean;
   viewPerformance: boolean;
+  managePerformanceTargets: boolean;
+  viewAdditionalShifts: boolean;
+  planAdditionalShifts: boolean;
+  releaseAdditionalShifts: boolean;
+  cancelAdditionalShifts: boolean;
 };
 
 export const permissionOptions = [
@@ -67,6 +72,11 @@ export const permissionOptions = [
   { id: "approveShiftSwap", label: "Schichttausch prüfen und genehmigen" },
   { id: "recordPerformance", label: "Eigene Leistung erfassen" },
   { id: "viewPerformance", label: "Leistungen auswerten" },
+  { id: "managePerformanceTargets", label: "Sollwerte der Arbeitsplätze bearbeiten" },
+  { id: "viewAdditionalShifts", label: "Zusatzschichten sehen" },
+  { id: "planAdditionalShifts", label: "Zusatzschichten planen" },
+  { id: "releaseAdditionalShifts", label: "Zusatzschichten freigeben" },
+  { id: "cancelAdditionalShifts", label: "Zusatzschichten stornieren" },
 ] as const satisfies ReadonlyArray<{
   id: keyof EmployeePermissions;
   label: string;
@@ -89,6 +99,9 @@ export type Employee = {
   individualAssignments?: Readonly<Record<string, Shift>>;
   qualifications?: Readonly<Record<string, number>>;
   account?: EmployeeAccount | null;
+  additionalShifts?: Readonly<Record<string, {
+    id: string; shift: ActiveShift; departmentId: string; departmentName: string;
+  }>>;
 };
 
 export type EmployeeAccount = {
@@ -127,6 +140,11 @@ function makePermissions(
     approveShiftSwap: false,
     recordPerformance: true,
     viewPerformance: false,
+    managePerformanceTargets: false,
+    viewAdditionalShifts: false,
+    planAdditionalShifts: false,
+    releaseAdditionalShifts: false,
+    cancelAdditionalShifts: false,
     ...overrides,
   };
 }
@@ -140,6 +158,10 @@ const foremanPermissions = makePermissions({
   viewQualifications: true,
   approveShiftSwap: true,
   viewPerformance: true,
+  viewAdditionalShifts: true,
+  planAdditionalShifts: true,
+  releaseAdditionalShifts: true,
+  cancelAdditionalShifts: true,
 });
 
 const adminPermissions = Object.fromEntries(

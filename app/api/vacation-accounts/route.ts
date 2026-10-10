@@ -13,6 +13,9 @@ export async function GET(request: Request) {
   if (!canSeeOthers && !hasPermission(context, "ownVacation")) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
+  if (!canSeeOthers && !context.employeeId) {
+    return NextResponse.json({ error: "Kein Mitarbeiterkonto zugeordnet" }, { status: 403 });
+  }
 
   const year = Number(new URL(request.url).searchParams.get("year"));
   if (!isValidYear(year)) {
@@ -22,7 +25,7 @@ export async function GET(request: Request) {
   const accounts = await prisma.vacationAccount.findMany({
     where: {
       year,
-      ...(canSeeOthers ? {} : { employeeId: context.employeeId ?? "__none__" }),
+      ...(canSeeOthers ? {} : { employeeId: { in: context.employeeId ? [context.employeeId] : [] } }),
     },
   });
 

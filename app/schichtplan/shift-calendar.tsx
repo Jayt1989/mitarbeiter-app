@@ -12,6 +12,7 @@ import { getAssignmentForDay, type TemporaryAssignment } from "../admin/assignme
 import type { ShiftPlanData } from "@/lib/shift-plan";
 import { shiftPlanRepository } from "./repository";
 import { berlinTodayKey } from "@/lib/calendar";
+import { shiftTimeLabel } from "@/lib/shift-interval";
 import {
   absenceStyles,
   companyDayMarkerStyle,
@@ -350,6 +351,7 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                         vacationOnDay?.status !== "Genehmigt" && !absenceOnDay
                           ? getAssignmentForDay(selectedEmployee.id, dateKey, shift, assignments)
                           : null;
+                      const additionalOnDay = selectedEmployee.additionalShifts?.[dateKey];
                       const shiftClass = vacationOnDay
                         ? vacationStyles[vacationOnDay.status as Exclude<VacationStatus, "Storniert">]
                         : absenceOnDay
@@ -370,7 +372,7 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                               ? "Abwesenh."
                               : absenceOnDay
                         : shift ?? "–";
-                      const accessibleLabel = `${day}. ${month.name} ${year}: ${vacationOnDay ? `Urlaub ${vacationOnDay.status.toLocaleLowerCase("de")}` : absenceOnDay ?? shiftLabel}${shift && shift !== "Frei" ? `, Schicht laut Plan ${shift}` : ""}${assignmentOnDay ? `, Einsatz: ${assignmentOnDay.areaName}` : ""}${marks.holiday ? `, Feiertag: ${marks.holiday.name}` : ""}${marks.companyDays.map((entry) => `, Sondertag: ${entry.name}`).join("")}`;
+                      const accessibleLabel = `${day}. ${month.name} ${year}: ${vacationOnDay ? `Urlaub ${vacationOnDay.status.toLocaleLowerCase("de")}` : absenceOnDay ?? shiftLabel}${shift && shift !== "Frei" ? `, Schicht laut Plan ${shift}` : ""}${additionalOnDay ? `, Zusatzschicht: ${additionalOnDay.departmentName}, ${shiftTimeLabel(additionalOnDay.shift)}` : ""}${assignmentOnDay ? `, Einsatz: ${assignmentOnDay.areaName}` : ""}${marks.holiday ? `, Feiertag: ${marks.holiday.name}` : ""}${marks.companyDays.map((entry) => `, Sondertag: ${entry.name}`).join("")}`;
                       const cellContent = (
                         <>
                           <span className="text-[10px] font-semibold leading-3 tabular-nums">
@@ -379,6 +381,8 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                           <span className="truncate text-[9px] font-medium leading-3 sm:text-[10px]">
                             {shiftLabel}
                           </span>
+                          {additionalOnDay && <span title={`${additionalOnDay.departmentName} · ${shiftTimeLabel(additionalOnDay.shift)}`}
+                            className="text-[8px] font-bold leading-3">Zusatzschicht</span>}
                           {markNames.length > 0 && (
                             <span
                               title={markNames.join(" · ")}
@@ -404,7 +408,7 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                         marks.holiday ? holidayMarkerStyle : ""
                       } ${marks.companyDays.length > 0 ? companyDayMarkerStyle : ""}`;
 
-                      const canRequestDay = canSwap && selectedEmployee.id === ownEmployeeId &&
+                      const canRequestDay = !additionalOnDay && canSwap && selectedEmployee.id === ownEmployeeId &&
                         shift && shift !== "Frei" && dateKey >= berlinTodayKey();
                       return vacationOnDay ? (
                         <button

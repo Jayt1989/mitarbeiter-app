@@ -196,8 +196,8 @@ Mitarbeiter-Overrides bleiben bestehen.
 
 Eigene und administrative Listen sind getrennt. Adminrechte geben weiterhin
 keinen Zugriff auf private Benachrichtigungen anderer Mitarbeiter.
-Nach der Migration einmal ab- und wieder anmelden, damit die neuen Rechte auch
-im Sitzungstoken stehen. Kein Seed und kein Berechtigungs-Reset nötig.
+Rolle, Rechte und Mitarbeiterzuordnung werden bei jeder authentifizierten Anfrage
+aus der Datenbank aktualisiert. Kein Seed und kein Berechtigungs-Reset nötig.
 
 Lokal: die oben genannten Prisma-Befehle verwenden. Die bereits enthaltene
 Migration wird mit `npx prisma migrate dev` angewendet. Für Neon/Produktion
@@ -273,3 +273,149 @@ In diesen Fällen ist Löschen gesperrt, und es bleibt nur das Deaktivieren:
 - Konten, die Urlaube, Abwesenheiten, Einsätze, Betriebstage oder Schichttausche für andere genehmigt bzw. erfasst haben
 
 Audit-Log-Einträge bleiben immer erhalten.
+
+## Leistungserfassung
+
+Mitarbeiter erfassen unter `/leistung` ihre aktuelle Leistung. Die responsive Dashboard-Kachel „Leistung“ führt direkt zur bestehenden Erfassung und verwendet denselben Kachelstil wie Schichtplan und Urlaub.
+
+Auch die Startseite `/` (`app/page.tsx`, „Deine Bereiche“) enthält die Kachel „Leistung“ im identischen Stil der vier bestehenden Kacheln. Sie ist für angemeldete Admins unabhängig vom Auswertungsrecht sichtbar und führt nach `/admin/leistung`; die Berechtigungsprüfung der Zielseite bleibt unverändert. Mitarbeiter sehen sie mit `recordPerformance` und verknüpftem Mitarbeiterkonto, Vorarbeiter entsprechend ihren Leistungsrechten. Ohne Anmeldung wird sie nicht angezeigt. Die Bereichsanzahl wird aus den sichtbaren Kacheln berechnet.
+
+- **Mitarbeiteransicht:** ausschließlich Eingabe für den aktuellen, serverseitig ermittelten Schichttag; keine Eintragsliste, Historie, Sollwerte, Prozentwerte, Auswertung oder fremden Leistungsdaten. Historische Einträge und Sollwerte werden für diese Ansicht nicht geladen oder an das Formular übergeben.
+- **Admin:** Die Kachel „Leistung“ im Admin-Dashboard führt bei vorhandenem Auswertungsrecht nach `/admin/leistung`. Auswertung, Sollwert-Pflege und Export bleiben mit ihren bestehenden Berechtigungen verfügbar.
+- **Vorarbeiter:** Das persönliche Dashboard ist unter `/dashboard` verfügbar. Leistungslinks und -funktionen erscheinen nur gemäß den vorhandenen Rechten: Erfassung (`recordPerformance`), Auswertung (`viewPerformance`) und Sollwert-Pflege (`managePerformanceTargets`). Ohne Auswertungsrecht ist die Erfassungsansicht ebenfalls auf die Eingabe beschränkt.
+
+- **Automatisch:** Datum, Mitarbeiter (aus dem Login) und Schicht (aus dem Schichtplan, inkl. genehmigter Schichttausche/Overrides).
+- **Eingaben:** Bereich (Kommissionieren / Verpackung), Arbeitsplatz (K01–K03 bzw. VP1–VP3), Menge, Arbeitszeit (Stunden/Minuten), optionale Bemerkung.
+- **Nachtschicht:** Erfassungen vor 06:00 Uhr zählen zur Nachtschicht des Vortags.
+- **Keine Erfassung möglich** an freien Tagen, bei genehmigtem Urlaub oder bei eingetragener Abwesenheit.
+- **Grenzen:** Pro Schicht sind mehrere Einträge möglich, zusammen höchstens 16 Stunden. Die bestehende Löschfunktion bleibt erhalten, wird aber nur in der Eintragsliste berechtigter Admins/Vorarbeiter angeboten und erlaubt weiterhin ausschließlich eigene Einträge desselben Schichttags.
+
+Die Auswertung für Admins und Vorarbeiter liegt unter `/admin/leistung`:
+- Filter nach Zeitraum (max. 93 Tage), Bereich und Schicht
+- Summen und Menge pro Stunde nach Arbeitsplatz und nach Mitarbeiter
+- Liste der Einzeleinträge
+- Excel-Export mit den gleichen Filtern und den historischen Sollwerten (zusätzlich Exportberechtigung erforderlich)
+
+**Rechte:**
+- `recordPerformance` (alle Rollen)
+- `viewPerformance` (Admin, Vorarbeiter)
+- `managePerformanceTargets` (Admin/Vorarbeiter mit explizitem Recht; standardmäßig nur Admin)
+
+Die Erfassungs- und Auswertungsrechte werden über die Migration `20261009230000_performance_entries` gesetzt. Das neue Pflege-Recht wird über `20261010080000_performance_workstations` ergänzt. Auch Admins benötigen ausdrücklich `managePerformanceTargets`; normale Mitarbeiter dürfen Sollwerte unabhängig von versehentlich vergebenen Verwaltungsrechten nicht ändern. Jeder Eintrag, jede Löschung und jede Sollwertänderung werden im Audit-Log festgehalten (`performance.create`, `performance.delete`, `performance.target.update`).
+
+Die auswählbaren Arbeitsplätze sind in `lib/performance-rules.ts` (`performanceAreas`) definiert und als Stammdaten in `PerformanceWorkstation` gespeichert.
+
+### Soll-Leistung und Zielerreichung
+
+Unter `/admin/leistung/arbeitsplaetze` können entsprechend berechtigte Admins und Vorarbeiter die Soll-Stückzahlen pro Stunde für K01–K03 und VP1–VP3 eintragen und ändern. Der Link ist im Dashboard und im Leistungsmodul verfügbar. Sollwerte sind positive ganze Zahlen und werden ausschließlich aus der Datenbank gelesen, nicht im Anwendungscode festgelegt.
+
+- **Soll wird mitgespeichert:** Jeder Eintrag speichert das zum Erfassungszeitpunkt gültige Soll (`PerformanceEntry.targetPerHour`). Eine spätere Änderung der Werte wirkt nur auf neue Einträge.
+- **Ist Stück/Std.:** Menge / Arbeitszeit in Stunden.
+- **Leistungsgrad %:** Ist Stück/Std. / Soll Stück/Std. × 100. Ist und Leistungsgrad werden auf eine Nachkommastelle gerundet; die Berechnung verwendet ungerundete Zwischenwerte.
+- **Ohne Soll:** Die Erfassung bleibt möglich. Der Snapshot bleibt `null`; in berechtigten Auswertungen werden Soll und Leistungsgrad als „Nicht hinterlegt“ angezeigt, auch wenn später ein Sollwert gepflegt wird. Die reine Mitarbeiter-Erfassung zeigt keine Sollwert-Hinweise.
+- **Summen:** Bei mehreren Arbeitsplätzen wird das Soll nach Arbeitszeit gewichtet. Der zusammengefasste Leistungsgrad berücksichtigt ausschließlich Einträge mit gespeichertem Soll; Stückzahl und Arbeitszeit enthalten weiterhin alle Einträge.
+- **Anzeige und Excel:** Die Admin-/Vorarbeiter-Leistungsübersicht und die eigene Eintragsliste bei vorhandenem Auswertungsrecht zeigen Soll Stück/Std., Ist Stück/Std. und Leistungsgrad %. Mitarbeiter sehen diese Angaben nicht. Der Excel-Export unter `/api/export/excel?type=performance` enthält diese Spalten als Zahlen (fehlendes Soll als Text). Dafür sind `viewPerformance` mit Admin-/Vorarbeiterrolle und eine bestehende Exportberechtigung (`exportReports` oder `viewReports`) nötig.
+- **Farben:** grün ab 100 %, gelb ab 85 %, darunter rot.
+
+Die bereits vorhandene Migration `20261009235000_performance_targets` fügt die Snapshot-Spalte hinzu und trägt die damaligen Startwerte bei bestehenden Einträgen nach. Diese Migration bleibt unverändert. Die neue, additive Migration `20261010080000_performance_workstations` legt die sechs Stammdatensätze und das Pflege-Recht an. Als Startwert wird je Arbeitsplatz der jüngste vorhandene Nicht-Null-Snapshot übernommen; ohne bisherigen Snapshot bleibt der Sollwert leer. Die neue Migration verändert oder löscht keine bestehenden Leistungseinträge.
+
+**Lokal anwenden** (Prisma CLI lädt `.env.local` nicht automatisch):
+
+```bash
+DOTENV_CONFIG_PATH=.env.local node -r dotenv/config node_modules/prisma/build/index.js migrate deploy
+npm run db:generate
+```
+
+Danach einen laufenden Entwicklungsserver neu starten und die Sollwerte prüfen bzw. unter `/admin/leistung/arbeitsplaetze` pflegen. Kein `prisma migrate reset` verwenden. Bei einer Umgebung mit bereits gesetzter `DATABASE_URL` genügt `npm run db:deploy` statt des ersten Befehls.
+
+**Gezielt testen:**
+
+```bash
+npx tsx --test lib/performance-rules.test.ts lib/export/performance-excel.test.ts app/leistung/performance-form.test.tsx app/dashboard/personal-dashboard.test.tsx
+DOTENV_CONFIG_PATH=.env.local PERFORMANCE_DB_TESTS=1 node -r dotenv/config node_modules/tsx/dist/cli.mjs --test lib/performance.integration.test.ts
+```
+
+Der Integrationstest ist standardmäßig deaktiviert und erlaubt nur eine lokale PostgreSQL-Verbindung. Er verwendet ein eigenes temporäres Schema, prüft Migration, Snapshot-Erhaltung, Pflege- und Exportrechte und entfernt ausschließlich dieses Testschema anschließend wieder.
+
+## Serverseitige Benutzertrennung
+
+- `lib/access-policy.ts` begrenzt Rechte nach Rolle. Normale Mitarbeiter können ausschließlich eigene Funktionen nutzen, auch bei versehentlich gesetzten Team-/Verwaltungsrechten. Konten- und Stammdatenänderungen bleiben Admins mit `editEmployees` vorbehalten.
+- Authentifizierung und `getAuthorizationContext` lösen User, aktuelle Employee-Zuordnung und effektive Rechte aus der Datenbank auf. Änderungen an Rolle, Rechten oder Zuordnung wirken auf bereits bestehende Sitzungen; deaktivierte Konten und alte Sitzungen nach Passwortwechsel verlieren ihren Zugriff.
+- Adminseiten prüfen ihre Funktionsrechte zusätzlich serverseitig über `requirePageAccess` beziehungsweise ihre vorhandenen Leistungs-/Tauschprüfungen. Das Ausblenden von Links ersetzt keine Zugriffskontrolle.
+- „Mein Urlaub“ verwendet den angemeldeten Mitarbeiter statt einer Demo-ID. Leistungs-, Urlaubs-, Planungs-, Benachrichtigungs- und Passwortaktionen beziehen ihre eigene Mitarbeiter-/Benutzer-ID niemals aus Browserfeldern.
+- Die normalen Mitarbeiterlisten und Kontoaktionen bleiben getrennt von Fachansichten. `GET /api/employees?scope=vacation|qualifications|assignments|export` benötigt das jeweilige Fachrecht und liefert nur die benötigten Namen/Planungsdaten: keine Kontaktinformationen, Personalnummern, Kontoinformationen oder individuellen Rechte. Qualifikationsdaten werden nur für Qualifikation/Einsatzplanung mitgeliefert.
+- Die Einsatzplanung liest Verfügbarkeit über einen separat autorisierten Planungsscope; fremde Urlaubskommentare und konkrete Abwesenheitsarten werden dort nicht mitgeliefert.
+- Schichttausch erlaubt weiterhin die erforderliche minimale Partnerliste (Name, Bereich, Schicht). Unbeteiligte Anfragen bleiben privat. Auch Fehlerantworten geben ohne passende Urlaubs-/Abwesenheitsrechte nur einen allgemeinen Planungskonflikt zurück.
+- Produktive Ansichten und Repositories verwenden keine Demo-Mitarbeiter, Demo-Abwesenheiten oder unautorisierten localStorage-Fallbacks. API-Fehler werden angezeigt; fehlgeschlagene Schreibaktionen werden nicht als lokal erfolgreich ausgegeben. Beispieldefinitionen bleiben ausschließlich für Seeds/Tests erhalten.
+- Mitarbeiter-Leistung bleibt eine reine aktuelle Erfassung ohne Historie, Sollwerte oder Prozentwerte. Admin-/Vorarbeiterauswertungen und Exporte benötigen die jeweiligen Rechte. Eigener Jahresplan-Export ist weiterhin mit eigenem Planrecht möglich, aber niemals für eine fremde Employee-ID.
+
+Die Benutzertrennung ändert kein Prisma-Modell und benötigt keine neue Migration. Bestehende Daten, IDs und gespeicherte Rechte werden nicht gelöscht oder umgeschrieben; nicht rollengerechte Rechte werden lediglich bei der Autorisierung unwirksam.
+
+### Reproduzierbare Trennungstests
+
+```bash
+npm run build
+npx tsx --test lib/*.test.ts lib/export/*.test.ts app/dashboard/personal-dashboard.test.tsx app/leistung/performance-form.test.tsx app/schichtplan/rotation.test.ts
+DOTENV_CONFIG_PATH=.env.local ISOLATION_DB_TESTS=1 node -r dotenv/config node_modules/tsx/dist/cli.mjs --test lib/employee-isolation.integration.test.ts
+```
+
+Der HTTP-Integrationstest legt in einem zufälligen temporären PostgreSQL-Schema zwei unterschiedliche Mitarbeiterkonten A/B sowie Admin und Vorarbeiter an. Er meldet sie mit echten Credentials an einem separaten lokalen Next-Server an und prüft eigene Daten, manipulierte IDs, direkte Admin-URLs, Excel-Inhalte, Tausch-Fehlerantworten, echte Leistungs-/Sollwert-/Passwort-Server-Actions sowie sofortigen Rechteentzug, Rollenwechsel und geänderte Employee-Zuordnung. Die Mitarbeiterrolle erhält dabei absichtlich auch unzulässige Verwaltungsflags, um die Rollenbegrenzung zu überprüfen. Ohne `ISOLATION_DB_TESTS=1` ist dieser Test deaktiviert; nicht lokale Datenbanken werden abgewiesen. Anschließend werden nur Testserver und eigenes Testschema entfernt, keine Konten in der normalen App-Datenbank angelegt.
+
+## Zusatzschichten / Wochenendarbeit
+
+Unter `/admin/zusatzschichten` planen Admins und Vorarbeiter einzelne Samstags- und Sonntagsdienste für einen oder mehrere Mitarbeiter. Datum, Früh/Spät/Nacht und Zielbereich sind erforderlich; eine Bemerkung ist optional. Mehrfachauswahlen werden atomar gespeichert: bei einem blockierenden Konflikt wird kein Mitarbeiter der Auswahl eingeplant.
+
+### Speicherung, Status und Rechte
+
+`AdditionalShift` speichert jeden Mitarbeiterdienst separat mit Datum, Schicht, Bereich, Bemerkung, Status, Ersteller, Freigeber und Zeitstempeln. Es werden keine Rotations- oder manuellen `ShiftAssignment`-Zeilen erzeugt.
+
+- `ENTWURF`: für die Planung reserviert, aber nicht im verbindlichen Mitarbeiterplan oder in der Besetzung.
+- `FREIGEGEBEN`: im persönlichen Schichtplan ausdrücklich als **Zusatzschicht**, im Dashboard und in der Personalbesetzung berücksichtigt.
+- `STORNIERT`: bleibt mit Historie gespeichert, wird nicht mehr im verbindlichen Plan gezählt. Eine neue Planung für denselben Tag ist danach möglich; stornierte Einträge werden nicht reaktiviert.
+
+Neue Rechte: `viewAdditionalShifts`, `planAdditionalShifts`, `releaseAdditionalShifts`, `cancelAdditionalShifts`. Die additive Migration setzt Standardrechte für vorhandene Admin-/Vorarbeiterrollen, nicht für Mitarbeiter. Bestehende Einzelrechte werden nicht überschrieben. Seite und API autorisieren serverseitig; die Rolle muss Admin/Vorarbeiter sein. Änderungen bereits freigegebener Einträge benötigen zusätzlich zum Planungsrecht das Freigaberecht. Mitarbeiter sehen nur eigene freigegebene Einträge über ihre bestehenden Planrechte.
+
+### Schichtzeiten und Konflikte
+
+Vereinbarte Zeiten in **Europe/Berlin**: Früh 06–14 Uhr, Spät 14–22 Uhr, Nacht 22–06 Uhr des Folgetags. Eine Samstag-Nachtschicht gehört zum Samstag, auch wenn sie Sonntagmorgen endet. Der Herbst-/Frühjahrszeitwechsel wird über die tatsächlichen Berliner Zeitpunkte berücksichtigt (Nachtdienst gegebenenfalls neun beziehungsweise sieben statt acht tatsächliche Stunden). Die bestehende Leistungserfassung ordnet Arbeit vor 06 Uhr weiterhin der Nachtschicht des Vortags zu.
+
+Bei Erstellung, Änderung und erneut bei Freigabe werden geprüft:
+
+- aktiver Mitarbeiter und aktiver Zielbereich;
+- offener/genehmigter Urlaub sowie Krankheit/Abwesenheit; bei Nacht auch der Folgetag;
+- bestehende normale Schicht, individuelle Zuordnung/ShiftOverride;
+- andere nicht stornierte Zusatzschicht, temporärer Einsatz und offener/genehmigter Schichttausch;
+- Überschneidungen der Schichtintervalle, einschließlich benachbarter Kalendertage;
+- Qualifikationsanforderung des Zielbereichs für die ausgewählte Schicht über die vorhandene Mindestbesetzungslogik.
+
+Planungskonflikte blockieren. Fehlende/eingeschränkte Qualifikation erscheint wie vereinbart als **Warnung**, eine berechtigte Freigabe bleibt möglich. Diese Prüfung ist keine zusätzliche arbeitsrechtliche Ruhezeitenprüfung; sie verhindert Doppelbelegungen und die genannten Planungskonflikte.
+
+Serializable-Transaktionen und ein partieller eindeutiger Datenbankindex verhindern parallele Doppelplanung. Pro Mitarbeiter und Startdatum ist höchstens ein nicht stornierter Zusatzdienst möglich. Änderungen benötigen den aktuellen `updatedAt`-Wert. Neue Urlaubs-/Einsatz-/Overrideplanungen dürfen vorhandene Zusatzschichten ebenfalls nicht nachträglich überlagern; Zusatzschichten werden nicht über den normalen Schichttausch geändert.
+
+### Besetzung, Mitteilungen und Historie
+
+Die bestehende Tages-/Wochenlogik bleibt bestehen; ihre sieben Wochentage enthalten weiterhin Samstag und Sonntag. Der freigegebene Einzel-Dienst ergänzt nur sein Startdatum und zählt im **gewählten Zielbereich**, inklusive der vorhandenen Qualifikationsbesetzung. Folgetage und Wochenrotation bleiben unverändert. Wochen-/Jahres-Excel und Druckansichten verwenden denselben Plan und kennzeichnen Zusatzschichten; die kompakte Jahresansicht verwendet eine Markierung mit Details in der Zellnotiz.
+
+Freigabe, Änderung einer freigegebenen Schicht und Stornierung einer freigegebenen Schicht erzeugen persönliche Benachrichtigungen. Entwürfe lösen noch keine verbindliche Mitarbeiter-Mitteilung aus. Audit-Aktionen `additional_shift.create`, `.update`, `.release`, `.cancel` enthalten Mitarbeiter, Datum, Schicht, Bereich, Status, ausführenden Benutzer und Audit-Zeitpunkt. Zusatzschichthistorie verhindert eine endgültige Mitarbeiterlöschung; Deaktivierung bleibt möglich.
+
+### Migration und lokale Befehle
+
+Migration: `20261010110000_additional_shifts`. Sie ergänzt Modell, Status, Benachrichtigungstypen, Indizes, Constraints und Rechte. Keine bestehenden Leistungs-/Schicht-/Mitarbeiterdaten werden gelöscht oder umgeschrieben. Kein Reset und kein Seed nötig.
+
+```bash
+DOTENV_CONFIG_PATH=.env.local node -r dotenv/config node_modules/prisma/build/index.js migrate deploy
+npm run db:generate
+npm run build
+```
+
+Danach den lokalen Server neu starten. **Diese Migration erst beim geplanten Produktionswechsel auf Neon anwenden** (`npm run db:deploy` mit der dortigen `DATABASE_URL`) und anschließend die passende Anwendungsversion bereitstellen. Das Erstellen und lokale Testen dieser Funktion führt keinen Neon-/Vercel-Deploy aus.
+
+Tests:
+
+```bash
+npx tsx --test lib/additional-shifts.test.ts
+DOTENV_CONFIG_PATH=.env.local ADDITIONAL_SHIFT_DB_TESTS=1 node -r dotenv/config node_modules/tsx/dist/cli.mjs --test lib/additional-shifts.integration.test.ts
+DOTENV_CONFIG_PATH=.env.local ISOLATION_DB_TESTS=1 node -r dotenv/config node_modules/tsx/dist/cli.mjs --test lib/employee-isolation.integration.test.ts
+```
+
+Der Zusatzschichttest nutzt nur ein temporäres lokales Schema und prüft Migrationserhaltung, alle sechs Samstag-/Sonntagsschichten, Konflikte, Nacht-Folgetag, Qualifikationswarnung, Freigabe, Änderung, Benachrichtigungen, Stornierung, Audit, Mehrfachauswahl und parallele Doppelplanung. Der HTTP-Trennungstest prüft zusätzlich echte API-Aufrufe, entzogenes Freigaberecht und eigene Kalender-/Dashboardanzeige. Beide entfernen ausschließlich ihre eigenen Testschemas.

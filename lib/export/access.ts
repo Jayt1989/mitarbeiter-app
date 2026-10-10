@@ -1,4 +1,4 @@
-import type { AuthorizationContext } from "@/lib/authorization";
+import { hasPermission, type AuthorizationContext } from "@/lib/authorization";
 
 export type ExportAccess = {
   /** Team- und Gesamtexporte (alle Mitarbeiter). */
@@ -9,7 +9,7 @@ export type ExportAccess = {
 
 export function getExportAccess(context: AuthorizationContext): ExportAccess {
   return {
-    team: context.permissions.exportReports === true || context.permissions.viewReports === true,
-    own: context.permissions.ownShiftPlan === true,
+    team: hasPermission(context, "exportReports") || hasPermission(context, "viewReports"),
+    own: context.employeeId !== null && hasPermission(context, "ownShiftPlan"),
   };
 }

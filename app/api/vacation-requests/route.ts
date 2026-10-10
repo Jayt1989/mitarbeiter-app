@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { assertNoAdditionalPeriod } from "@/lib/additional-shift-conflicts";
+import { AdditionalShiftError } from "@/lib/additional-shift-rules";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuthorizationContext, hasPermission } from "@/lib/authorization";
 import { recordAuditLog } from "@/lib/audit";
@@ -15,21 +18,24 @@ export async function GET() {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
 
-  const canSeeOthers = hasPermission(context, "otherVacations");
+  const canSeeOthers = hasPermission(context, "otherVacations") || hasPermission(context, "approveVacation");
   const canSeeOwn = hasPermission(context, "ownVacation");
   if (!canSeeOthers && !canSeeOwn) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
+  if (!canSeeOthers && !context.employeeId) {
+    return NextResponse.json({ error: "Kein Mitarbeiterkonto zugeordnet" }, { status: 403 });
+  }
 
   const requests = await prisma.vacationRequest.findMany({
-    where: canSeeOthers ? undefined : { employeeId: context.employeeId ?? "__none__" },
+    where: canSeeOthers ? undefined : { employeeId: { in: context.employeeId ? [context.employeeId] : [] } },
     orderBy: { requestedAt: "desc" },
   });
 
   return NextResponse.json(requests.map(toVacationRequestDto));
 }
 
-export async function POST(request: Request) {
+async function requestVacation(request: Request) {
   const context = await getAuthorizationContext();
   if (!context) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
@@ -83,7 +89,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const created = await prisma.vacationRequest.create({
+  const created = await prisma.$transaction(async (tx) => {
+    await assertNoAdditionalPeriod(tx, employee.id, body.startDate, body.endDate);
+    return tx.vacationRequest.create({
     data: {
       employeeId: employee.id,
       startDate: new Date(`${body.startDate}T00:00:00.000Z`),
@@ -91,7 +99,8 @@ export async function POST(request: Request) {
       daysRequested: workdays.length,
       comment: body.comment?.trim() || null,
     },
-  });
+    });
+  }, { isolationLevel: "Serializable" });
 
   await recordAuditLog({
     actorUserId: context.userId,
@@ -104,7 +113,7 @@ export async function POST(request: Request) {
   return NextResponse.json(toVacationRequestDto(created), { status: 201 });
 }
 
-export async function PATCH(request: Request) {
+async function decideVacation(request: Request) {
   const context = await getAuthorizationContext();
   if (!context) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
@@ -130,6 +139,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json(toVacationRequestDto(existing));
   }
   const updated = await prisma.$transaction(async (tx) => {
+    if (status === "APPROVED") {
+      await assertNoAdditionalPeriod(tx, existing.employeeId,
+        existing.startDate.toISOString().slice(0, 10), existing.endDate.toISOString().slice(0, 10));
+    }
     const changed = await tx.vacationRequest.updateMany({
       where: { id: existing.id, status: existing.status },
       data: { status, decidedAt: new Date(), approvedById: context.userId },
@@ -140,7 +153,7 @@ export async function PATCH(request: Request) {
       await createNotification(tx, vacationNotification(record, status));
     }
     return record;
-  });
+  }, { isolationLevel: "Serializable" });
   if (!updated) {
     return NextResponse.json({ error: "Der Antrag wurde inzwischen geändert. Bitte neu laden." }, { status: 409 });
   }
@@ -155,4 +168,18 @@ export async function PATCH(request: Request) {
   });
 
   return NextResponse.json(toVacationRequestDto(updated));
+}
+
+function conflictResponse(error: unknown) {
+  if (error instanceof AdditionalShiftError) return NextResponse.json({ error: error.message }, { status: error.status });
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+    return NextResponse.json({ error: "Die Planung wurde gleichzeitig geändert. Bitte neu laden und erneut prüfen." }, { status: 409 });
+  }
+  throw error;
+}
+export async function POST(request: Request) {
+  try { return await requestVacation(request); } catch (error) { return conflictResponse(error); }
+}
+export async function PATCH(request: Request) {
+  try { return await decideVacation(request); } catch (error) { return conflictResponse(error); }
 }

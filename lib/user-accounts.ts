@@ -6,6 +6,7 @@ import { hasPermission, type AuthorizationContext } from "./authorization";
 import { employeeRelations, shiftGroupLabelToCode, toEmployeeDto } from "./employee-mapper";
 import { passwordPolicyErrors, validateNewPassword } from "./password-policy";
 import { permissionOptions, type Employee, type EmployeeRole } from "@/app/mitarbeiter/data";
+import { AdditionalShiftError } from "./additional-shift-rules";
 
 const bcryptRounds = 12;
 type Db = Prisma.TransactionClient;
@@ -332,9 +333,13 @@ export async function changeOwnPassword(
 }
 
 export function accountErrorResponse(error: unknown) {
+  if (error instanceof AdditionalShiftError) return { status: error.status, body: { error: error.message } };
   if (error instanceof AccountError) return { status: error.status, body: { error: error.message } };
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
     return { status: 409, body: { error: "Personalnummer oder E-Mail-Adresse ist bereits vergeben." } };
+  }
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+    return { status: 409, body: { error: "Die Planung wurde gleichzeitig geändert. Bitte neu laden und erneut prüfen." } };
   }
   return null;
 }

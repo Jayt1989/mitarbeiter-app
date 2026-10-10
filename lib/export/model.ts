@@ -66,6 +66,7 @@ export type DayCell = {
   assignmentArea: string | null;
   holiday: string | null;
   companyDays: string[];
+  additionalShift?: boolean;
 };
 
 export type ExportDay = {
@@ -148,12 +149,14 @@ export function createDayResolver(source: ExportSource) {
     if (shift === "Frei") return { ...base, kind: "Frei", label: "Frei", shift };
 
     const assignment = getAssignmentForDay(employee.id, dateKey, shift, assignments.get(employee.id) ?? []);
+    const additional = employee.additionalShifts?.[dateKey];
     return {
       ...base,
       kind: shift,
-      label: assignment ? `${shift} · ${assignment.areaName}` : shift,
+      label: additional ? `${shift} · Zusatzschicht · ${additional.departmentName}` : assignment ? `${shift} · ${assignment.areaName}` : shift,
       shift,
-      assignmentArea: assignment?.areaName ?? null,
+      assignmentArea: additional?.departmentName ?? assignment?.areaName ?? null,
+      additionalShift: !!additional,
     };
   }
 
@@ -355,7 +358,7 @@ export type YearExport = {
   stateName: string;
   months: { name: string; cells: (DayCell | null)[] }[];
   holidays: ExportDay[];
-  assignments: { areaName: string; startDate: string; endDate: string; shift: string }[];
+  assignments: { areaName: string; startDate: string; endDate: string; shift: string; additionalShift?: boolean }[];
 };
 
 export function buildYearExport(source: ExportSource, employee: Employee, year: number): YearExport {
@@ -381,7 +384,7 @@ export function buildYearExport(source: ExportSource, employee: Employee, year: 
     holidays: daysBetween(`${year}-01-01`, `${year}-12-31`)
       .map(resolver.day)
       .filter((day) => day.holiday || day.companyDays.length > 0),
-    assignments: source.assignments
+    assignments: [...source.assignments
       .filter((entry) => entry.employeeId === employee.id)
       .map((entry) => ({
         areaName: entry.areaName,
@@ -389,6 +392,16 @@ export function buildYearExport(source: ExportSource, employee: Employee, year: 
         endDate: entry.endDate,
         shift: entry.shift ?? "Alle Schichten",
       })),
+      ...Object.entries(employee.additionalShifts ?? {})
+        .filter(([date]) => date >= `${year}-01-01` && date <= `${year}-12-31`)
+        .map(([date, entry]) => ({
+          areaName: entry.departmentName,
+          startDate: date,
+          endDate: date,
+          shift: entry.shift,
+          additionalShift: true,
+        })),
+    ],
   };
 }
 

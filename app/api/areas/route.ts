@@ -19,11 +19,10 @@ export async function GET() {
   if (!context) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
-  if (
-    !hasPermission(context, "editDepartments") &&
-    !hasPermission(context, "editMinimumStaffing") &&
-    !hasPermission(context, "viewReports")
-  ) {
+  if (!["editDepartments", "editMinimumStaffing", "viewReports", "exportReports",
+    "viewEmployees", "editEmployees", "teamShiftPlan", "editAssignments", "viewQualifications",
+    "editQualifications", "manageQualifications", "otherVacations", "approveVacation", "planAdditionalShifts"]
+    .some((permission) => hasPermission(context, permission))) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
 

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { effectivePermissions, permitted } from "@/lib/access-policy";
 
 export type AuthorizationContext = {
   userId: string;
@@ -37,7 +38,7 @@ export async function getAuthorizationContext(): Promise<AuthorizationContext | 
     employeeId: user.employeeId,
     login: user.login,
     role: user.role.code,
-    permissions,
+    permissions: effectivePermissions(user.role.code, permissions),
   };
 }
 
@@ -45,5 +46,5 @@ export function hasPermission(
   context: AuthorizationContext,
   permission: string,
 ) {
-  return context.permissions[permission] === true;
+  return permitted(context, permission);
 }

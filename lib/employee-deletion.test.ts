@@ -31,7 +31,7 @@ function fakeDb(options: {
   });
   const models = [
     "vacationRequest", "absence", "temporaryAssignment", "shiftAssignment", "shiftSwapRequest", "vacationAccount",
-    "employeeQualification", "employeePermission", "employeeDepartment", "notification", "auditLog", "companyDay", "user", "performanceEntry",
+    "employeeQualification", "employeePermission", "employeeDepartment", "notification", "auditLog", "companyDay", "user", "performanceEntry", "additionalShift",
   ];
   const db: Record<string, unknown> = Object.fromEntries(models.map((model) => [model, counter(model)]));
   db.employee = {
@@ -52,6 +52,15 @@ function fakeDb(options: {
 }
 
 const admin = { userId: "admin-user", employeeId: "admin-employee" };
+
+test("Zusatzschichten bleiben historisch erhalten und verhindern eine endgültige Mitarbeiterlöschung", async () => {
+  const { db } = fakeDb({ employee: { id: "extra", personnelNumber: "EXTRA-1", isActive: false },
+    counts: { additionalShift: 1 } });
+  const preview = (await analyzeEmployeeDeletion(db, "extra", admin))!;
+  assert.equal(preview.canDelete, false);
+  assert.ok(preview.blockers.some((entry) => entry.code === "additionalShifts"));
+  assert.ok(preview.retained.some((entry) => entry.key === "additionalShifts"));
+});
 
 test("MA-1001 ist unabhängig von Groß-/Kleinschreibung geschützt", async () => {
   assert.equal(isProtectedPersonnelNumber(" ma-1001 "), true);

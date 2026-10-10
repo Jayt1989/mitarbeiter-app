@@ -25,13 +25,23 @@ import { createNotification } from "@/lib/notifications";
 import { shiftNotification } from "@/lib/notification-messages";
 import { isValidDateKey } from "@/app/admin/assignments-data";
 import { deletedEmployeeIds } from "@/lib/employee-deletion";
+import { canReadEmployeeOverview, employeeOverviewScopes, toOverviewEmployee } from "@/lib/employee-overview";
+import { assertAdditionalRotation } from "@/lib/additional-shift-conflicts";
+import { AdditionalShiftError } from "@/lib/additional-shift-rules";
 
-export async function GET() {
+export async function GET(request: Request) {
   const context = await getAuthorizationContext();
   if (!context) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
-  if (!hasPermission(context, "viewEmployees") && !hasPermission(context, "editEmployees")) {
+  const requestedScope = new URL(request.url).searchParams.get("scope");
+  const scope = employeeOverviewScopes.find((value) => value === requestedScope);
+  if (requestedScope && !scope) {
+    return NextResponse.json({ error: "Unbekannte Mitarbeiteransicht" }, { status: 400 });
+  }
+  const allowed = scope ? canReadEmployeeOverview(context, scope)
+    : hasPermission(context, "viewEmployees") || hasPermission(context, "editEmployees");
+  if (!allowed) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
 
@@ -40,7 +50,10 @@ export async function GET() {
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 
-  return NextResponse.json(records.map(toEmployeeDto));
+  return NextResponse.json(records.map((record) => {
+    const employee = toEmployeeDto(record);
+    return scope ? toOverviewEmployee(employee, scope) : employee;
+  }), { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PUT(request: Request) {
@@ -48,7 +61,7 @@ export async function PUT(request: Request) {
   if (!context) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
-  if (!hasPermission(context, "editEmployees")) {
+  if (!canManageAccounts(context)) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
 
@@ -95,10 +108,12 @@ export async function PUT(request: Request) {
       });
       record = await prisma.$transaction(async (tx) => {
         const saved = await writeEmployeeCore(tx, employee);
+        await assertAdditionalRotation(tx, { ...employee, id: saved.id });
         if (existing) await syncLinkedUser(tx, context, { ...employee, id: saved.id }, existing.personnelNumber);
         return saved;
-      }, { timeout: 20_000 });
+      }, { timeout: 20_000, isolationLevel: "Serializable" });
     } catch (error) {
+      if (error instanceof AdditionalShiftError) return NextResponse.json({ error: error.message }, { status: error.status });
       const response = accountErrorResponse(error);
       if (response) return NextResponse.json(response.body, { status: response.status });
       throw error;
@@ -107,31 +122,33 @@ export async function PUT(request: Request) {
     if (employee.individualAssignments) {
       for (const [date, shift] of Object.entries(employee.individualAssignments)) {
         const assignmentDate = new Date(`${date}T00:00:00.000Z`);
-        await prisma.$transaction(async (tx) => {
-          const key = { employeeId: record.id, date: assignmentDate };
-          const assignment = await tx.shiftAssignment.findUnique({
-            where: { employeeId_date: key },
-          });
-          const nextShift = toShiftCode(shift);
-          if (assignment?.source === "MANUAL" && assignment.shift === nextShift) return;
-          const previousShift = assignment?.source === "MANUAL"
-            ? fromShiftCode(assignment.shift)
-            : before ? getShiftForDate(assignmentDate, toEmployeeShiftPlan(before)) : null;
-          if (assignment) {
-            const changed = await tx.shiftAssignment.updateMany({
-              where: { id: assignment.id, shift: assignment.shift, updatedAt: assignment.updatedAt },
-              data: { shift: nextShift, source: "MANUAL" },
+        try {
+          await prisma.$transaction(async (tx) => {
+            await assertAdditionalRotation(tx, { ...employee, id: record.id });
+            const key = { employeeId: record.id, date: assignmentDate };
+            const assignment = await tx.shiftAssignment.findUnique({
+              where: { employeeId_date: key },
             });
-            if (changed.count === 0) {
-              throw new Error("Die Schicht wurde inzwischen geändert. Bitte neu laden.");
+            const nextShift = toShiftCode(shift);
+            if (assignment?.source === "MANUAL" && assignment.shift === nextShift) return;
+            const previousShift = assignment?.source === "MANUAL"
+              ? fromShiftCode(assignment.shift)
+              : before ? getShiftForDate(assignmentDate, toEmployeeShiftPlan(before)) : null;
+            if (assignment) {
+              const changed = await tx.shiftAssignment.updateMany({
+                where: { id: assignment.id, shift: assignment.shift, updatedAt: assignment.updatedAt },
+                data: { shift: nextShift, source: "MANUAL" },
+              });
+              if (changed.count === 0) throw new Error("Die Schicht wurde inzwischen geändert. Bitte neu laden.");
+            } else {
+              await tx.shiftAssignment.create({ data: { ...key, shift: nextShift, source: "MANUAL" } });
             }
-          } else {
-            await tx.shiftAssignment.create({ data: { ...key, shift: nextShift, source: "MANUAL" } });
-          }
-          if (previousShift !== shift) {
-            await createNotification(tx, shiftNotification(record.id, assignmentDate, previousShift, shift));
-          }
-        });
+            if (previousShift !== shift) await createNotification(tx, shiftNotification(record.id, assignmentDate, previousShift, shift));
+          }, { isolationLevel: "Serializable" });
+        } catch (error) {
+          if (error instanceof AdditionalShiftError) return NextResponse.json({ error: error.message }, { status: error.status });
+          throw error;
+        }
       }
     }
 

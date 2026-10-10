@@ -11,7 +11,7 @@ export function isProtectedPersonnelNumber(value: string | null | undefined) {
   return !!normalized && protectedPersonnelNumbers.some((entry) => entry === normalized);
 }
 
-export type DeletionBlockerCode = "protected" | "self" | "admin" | "active" | "approvedSwaps" | "actionsForOthers";
+export type DeletionBlockerCode = "protected" | "self" | "admin" | "active" | "approvedSwaps" | "additionalShifts" | "actionsForOthers";
 export type DeletionBlocker = { code: DeletionBlockerCode; message: string };
 
 export type DeletionImpactItem = { key: string; label: string; count: number; detail?: string };
@@ -71,7 +71,7 @@ export async function analyzeEmployeeDeletion(
     openOrClosedSwaps, approvedSwaps, rotationAssignments, vacationAccounts, qualifications,
     permissions, departments, notifications, auditAboutEmployee, auditByUser,
     decidedForOthers, absencesForOthers, assignmentsForOthers, companyDays, reviewedSwaps,
-    performanceEntries,
+    performanceEntries, additionalShifts, additionalActions,
   ] = await Promise.all([
     db.vacationRequest.count({ where: { employeeId } }),
     db.vacationRequest.count({ where: { employeeId, status: "APPROVED" } }),
@@ -96,6 +96,8 @@ export async function analyzeEmployeeDeletion(
     userId ? db.companyDay.count({ where: { createdById: userId } }) : none,
     userId ? db.shiftSwapRequest.count({ where: { approvedById: userId } }) : none,
     db.performanceEntry.count({ where: { employeeId } }),
+    db.additionalShift.count({ where: { employeeId } }),
+    userId ? db.additionalShift.count({ where: { OR: [{ createdById: userId }, { releasedById: userId }] } }) : none,
   ]);
 
   const blockers: DeletionBlocker[] = [];
@@ -117,6 +119,9 @@ export async function analyzeEmployeeDeletion(
     blockers.push({ code: "approvedSwaps", message:
       `${approvedSwaps} genehmigte(r) Schichttausch(e) wirken im Schichtplan eines anderen Mitarbeiters. Bitte nur deaktivieren.`,
     });
+  }
+  if (additionalShifts || additionalActions) {
+    blockers.push({ code: "additionalShifts", message: "Zusatzschichten oder zugehörige Planungs-/Freigabehistorie müssen erhalten bleiben. Bitte nur deaktivieren." });
   }
   const actionsForOthers = decidedForOthers + absencesForOthers + assignmentsForOthers + companyDays + reviewedSwaps;
   if (actionsForOthers) {
@@ -149,6 +154,7 @@ export async function analyzeEmployeeDeletion(
 
   const retained: DeletionImpactItem[] = [
     { key: "auditLogs", label: "Audit-Log-Einträge (bleiben unverändert erhalten)", count: auditAboutEmployee + auditByUser },
+    { key: "additionalShifts", label: "Zusatzschichten (Historie bleibt erhalten; nur Deaktivierung möglich)", count: additionalShifts },
   ].filter((item) => item.count > 0);
 
   const fingerprint = [...historical, ...removed].map((item) => `${item.key}:${item.count}`).join("|");

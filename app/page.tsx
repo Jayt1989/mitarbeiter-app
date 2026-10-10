@@ -1,7 +1,12 @@
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
+import { getAuthorizationContext } from "@/lib/authorization";
+import { performanceHomeLink } from "@/lib/performance-rules";
+import { canAdditionalShift } from "@/lib/additional-shift-rules";
 
-export default function Home() {
+export default async function Home() {
+  const context = await getAuthorizationContext();
+  const performanceLink = performanceHomeLink(context);
   const areas = [
     {
       title: "Schichtplan",
@@ -60,6 +65,25 @@ export default function Home() {
       color: "bg-[#f1eafa] text-[#7850a1]",
       marker: "bg-[#9272b6]",
     },
+    ...(performanceLink ? [{
+      title: performanceLink.title,
+      description: performanceLink.text,
+      label: "LEISTUNG",
+      href: performanceLink.href,
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 20V10m7 10V4m7 16v-7M3 20h18" />
+        </svg>
+      ),
+      color: "bg-[#e1f2e8] text-[#197044]",
+      marker: "bg-[#3c9a69]",
+    }] : []),
+    ...(context && canAdditionalShift(context, "viewAdditionalShifts") ? [{
+      title: "Zusatzschichten", description: "Wochenendarbeit planen und freigeben.",
+      label: "WOCHENENDARBEIT", href: "/admin/zusatzschichten",
+      icon: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4m10-4v4M3 10h18m-9 3v6m-3-3h6" /></svg>,
+      color: "bg-[#fff0df] text-[#b65d22]", marker: "bg-[#e58a45]",
+    }] : []),
   ];
 
   return (
@@ -106,7 +130,7 @@ export default function Home() {
                 Deine Bereiche
               </h2>
             </div>
-            <span className="pb-0.5 text-sm text-[#6d7d72]">4 Bereiche</span>
+            <span className="pb-0.5 text-sm text-[#6d7d72]">{areas.length} Bereiche</span>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

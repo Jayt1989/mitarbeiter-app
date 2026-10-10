@@ -57,7 +57,7 @@ export default function ExportCenter() {
   useEffect(() => {
     let isCurrent = true;
 
-    void Promise.all([employeeRepository.loadAll(), areaRepository.load()]).then(([storedEmployees, configuration]) => {
+    void Promise.all([employeeRepository.loadOverview("export"), areaRepository.load()]).then(([storedEmployees, configuration]) => {
       if (!isCurrent) return;
       const sorted = (storedEmployees ?? []).sort((left, right) =>
         `${left.lastName} ${left.firstName}`.localeCompare(`${right.lastName} ${right.firstName}`, "de"),
@@ -65,6 +65,8 @@ export default function ExportCenter() {
       setEmployees(sorted);
       setEmployeeId((current) => current || sorted.find((employee) => employee.isActive)?.id || "");
       setAreas(configuration.areas.filter((entry) => entry.active));
+    }).catch((cause: unknown) => {
+      if (isCurrent) setError(cause instanceof Error ? cause.message : "Exportdaten konnten nicht geladen werden.");
     });
 
     return () => {

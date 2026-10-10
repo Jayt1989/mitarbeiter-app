@@ -1,20 +1,24 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import NotificationBell from "@/app/components/notification-bell";
+import AchievementBadge from "@/app/leistung/achievement-badge";
 import { isValidDateKey } from "@/app/admin/assignments-data";
 import { getAuthorizationContext } from "@/lib/authorization";
 import { berlinTodayKey, dateKeyToUtc } from "@/lib/calendar";
-import { listPerformance } from "@/lib/performance";
+import { listPerformance, listPerformanceWorkstations } from "@/lib/performance";
+import { getExportAccess } from "@/lib/export/access";
 import {
   MAX_REPORT_DAYS,
   canRecordPerformance,
+  canManagePerformanceTargets,
   canViewPerformance,
   formatDuration,
   parsePerformanceFilter,
   performanceAreas,
-  quantityPerHour,
   summarizePerformance,
+  summarizeRows,
   type PerformanceSummary,
 } from "@/lib/performance-rules";
 
@@ -23,7 +27,7 @@ export const metadata: Metadata = { title: "Leistungsauswertung | Mitarbeiter-Ap
 const shortDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 const timeFormat = new Intl.DateTimeFormat("de-DE", { timeStyle: "short", timeZone: "Europe/Berlin" });
 const numberFormat = new Intl.NumberFormat("de-DE");
-const rateFormat = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
+const rateFormat = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const formatDate = (dateKey: string) => shortDate.format(dateKeyToUtc(dateKey));
 
 const fieldClass =
@@ -37,9 +41,13 @@ export default async function PerformanceReportPage({ searchParams }: {
   if (!canViewPerformance(context)) redirect("/dashboard");
 
   const filter = parsePerformanceFilter(await searchParams, berlinTodayKey(), isValidDateKey);
-  const rows = await listPerformance(filter);
-  const totalQuantity = rows.reduce((sum, row) => sum + row.quantity, 0);
-  const totalMinutes = rows.reduce((sum, row) => sum + row.durationMinutes, 0);
+  const [rows, workstations] = await Promise.all([listPerformance(filter), listPerformanceWorkstations()]);
+  const exportParams = new URLSearchParams({
+    type: "performance", von: filter.from, bis: filter.to,
+    ...(filter.area ? { bereich: filter.area } : {}),
+    ...(filter.shift ? { schicht: filter.shift } : {}),
+  });
+  const total = summarizeRows(rows);
   const byWorkstation = summarizePerformance(rows, (row) => ({
     key: `${row.area}:${row.workstation}`, label: row.workstation, detail: row.areaLabel,
   }));
@@ -57,6 +65,9 @@ export default async function PerformanceReportPage({ searchParams }: {
             <span className="hidden text-sm font-semibold sm:inline">MITARBEITERPORTAL</span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Hauptnavigation">
+            {canManagePerformanceTargets(context) && (
+              <Link href="/admin/leistung/arbeitsplaetze" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Sollwerte bearbeiten</Link>
+            )}
             {context.role === "ADMIN" && context.permissions.openAdmin === true && (
               <Link href="/admin" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Personalbesetzung</Link>
             )}
@@ -101,19 +112,52 @@ export default async function PerformanceReportPage({ searchParams }: {
             Anzeigen
           </button>
         </form>
+        {getExportAccess(context).team && (
+          <a href={`/api/export/excel?${exportParams}`} className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-[#cfdad1] bg-white px-4 text-sm font-semibold text-[#41634f] hover:bg-[#edf3ee]">
+            Leistungen als Excel exportieren
+          </a>
+        )}
         {filter.limited && (
           <p role="status" className="mt-3 rounded-lg border border-[#ecd9a8] bg-[#fff8e6] px-3 py-2 text-sm text-[#7a5a12]">
             Der Zeitraum wurde auf {MAX_REPORT_DAYS} Tage begrenzt.
           </p>
         )}
 
-        <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Kpi label="Zeitraum" value={period} />
+        <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <Kpi label="Zeitraum" value={period} className="col-span-2 sm:col-span-1" />
           <Kpi label="Einträge" value={numberFormat.format(rows.length)} />
-          <Kpi label="Menge gesamt" value={numberFormat.format(totalQuantity)} />
-          <Kpi label="Menge pro Stunde" value={rateFormat.format(quantityPerHour(totalQuantity, totalMinutes))}
-            hint={`Arbeitszeit ${formatDuration(totalMinutes)}`} />
+          <Kpi label="Stück gesamt" value={numberFormat.format(total.quantity)}
+            hint={total.expectedQuantity > 0 ? `Soll ${numberFormat.format(total.expectedQuantity)}` : undefined} />
+          <Kpi label="Stück pro Stunde" value={rateFormat.format(total.perHour)}
+            hint={`${total.targetPerHour !== null ? `Soll ${rateFormat.format(total.targetPerHour)} · ` : ""}${formatDuration(total.durationMinutes)}`} />
+          <Kpi label="Leistungsgrad" value={rows.length === 0 ? "–" : <AchievementBadge percent={total.achievement} />} />
         </dl>
+
+        <details className="mt-4 rounded-xl border border-[#e0e7e0] bg-white px-4 py-3 text-sm">
+          <summary className="cursor-pointer font-semibold text-[#2f4a3b]">Soll-Werte je Arbeitsplatz</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {performanceAreas.map((area) => (
+              <div key={area.id}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#5e7366]">{area.label}</p>
+                <ul className="mt-1 space-y-0.5">
+                  {area.workstations.map((workstation) => {
+                    const target = workstations.find((entry) => entry.code === workstation)?.targetPerHour ?? null;
+                    return (
+                      <li key={workstation} className="flex justify-between gap-3 tabular-nums">
+                        <span className="font-semibold">{workstation}</span>
+                        <span>{target === null ? "Nicht hinterlegt" : `${numberFormat.format(target)} Stück/Std.`}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-[#5e7366]">
+            Grün ab 100 %, gelb ab 85 %, darunter rot. Jeder Eintrag speichert das zum Erfassungszeitpunkt gültige Soll.
+            Summen des Leistungsgrads berücksichtigen nur Einträge mit Sollwert.
+          </p>
+        </details>
 
         {rows.length === 0 ? (
           <p className="mt-6 rounded-xl border border-dashed border-[#d7dfd8] bg-white px-4 py-8 text-center text-sm text-[#5e7366]">
@@ -136,7 +180,11 @@ export default async function PerformanceReportPage({ searchParams }: {
                   <li key={row.id} className="py-3 text-sm">
                     <p className="font-semibold">{row.employeeName} <span className="font-normal text-[#5e7366]">· {row.personnelNumber}</span></p>
                     <p className="text-[#41634f]">{formatDate(row.workDate)} · {row.shift} · {row.areaLabel} {row.workstation}</p>
-                    <p>Menge {numberFormat.format(row.quantity)} · {formatDuration(row.durationMinutes)} · {rateFormat.format(quantityPerHour(row.quantity, row.durationMinutes))}/Std.</p>
+                    <p>{numberFormat.format(row.quantity)} Stück · {formatDuration(row.durationMinutes)}</p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2">
+                      <span>Ist {rateFormat.format(row.perHour)} Stück/Std. · Soll {row.targetPerHour === null ? "nicht hinterlegt" : `${numberFormat.format(row.targetPerHour)} Stück/Std.`}</span>
+                      <span>Leistungsgrad <AchievementBadge percent={row.achievement} /></span>
+                    </p>
                     {row.note && <p className="mt-1 break-words text-[#5e7366]">{row.note}</p>}
                   </li>
                 ))}
@@ -152,7 +200,9 @@ export default async function PerformanceReportPage({ searchParams }: {
                       <th className="py-2 pr-3 font-semibold">Platz</th>
                       <th className="py-2 pr-3 text-right font-semibold">Menge</th>
                       <th className="py-2 pr-3 text-right font-semibold">Zeit</th>
-                      <th className="py-2 pr-3 text-right font-semibold">pro Std.</th>
+                      <th className="py-2 pr-3 text-right font-semibold">Ist Stück/Std.</th>
+                      <th className="py-2 pr-3 text-right font-semibold">Soll Stück/Std.</th>
+                      <th className="py-2 pr-3 text-right font-semibold">Leistungsgrad %</th>
                       <th className="py-2 font-semibold">Bemerkung</th>
                     </tr>
                   </thead>
@@ -169,7 +219,9 @@ export default async function PerformanceReportPage({ searchParams }: {
                         <td className="py-2 pr-3 font-semibold">{row.workstation}</td>
                         <td className="py-2 pr-3 text-right tabular-nums">{numberFormat.format(row.quantity)}</td>
                         <td className="py-2 pr-3 text-right whitespace-nowrap">{formatDuration(row.durationMinutes)}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">{rateFormat.format(quantityPerHour(row.quantity, row.durationMinutes))}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{rateFormat.format(row.perHour)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{row.targetPerHour !== null ? numberFormat.format(row.targetPerHour) : "Nicht hinterlegt"}</td>
+                        <td className="py-2 pr-3 text-right"><AchievementBadge percent={row.achievement} /></td>
                         <td className="max-w-64 py-2 break-words text-[#5e7366]">{row.note ?? "–"}</td>
                       </tr>
                     ))}
@@ -184,9 +236,9 @@ export default async function PerformanceReportPage({ searchParams }: {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Kpi({ label, value, hint, className = "" }: { label: string; value: ReactNode; hint?: string; className?: string }) {
   return (
-    <div className="rounded-xl border border-[#e0e7e0] bg-white px-4 py-3">
+    <div className={`min-w-0 rounded-xl border border-[#e0e7e0] bg-white px-4 py-3 ${className}`}>
       <dt className="text-xs font-medium text-[#5e7366]">{label}</dt>
       <dd className="mt-1 text-lg font-semibold sm:text-xl">{value}</dd>
       {hint && <dd className="text-xs text-[#5e7366]">{hint}</dd>}
@@ -198,13 +250,15 @@ function SummaryTable({ title, rows }: { title: string; rows: PerformanceSummary
   return (
     <section className="rounded-xl border border-[#e0e7e0] bg-white p-4 sm:p-5">
       <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="-mx-1 overflow-x-auto px-1">
       <table className="mt-3 w-full text-left text-sm">
         <thead className="border-b border-[#e0e7e0] text-xs uppercase tracking-wide text-[#5e7366]">
           <tr>
             <th className="py-2 pr-2 font-semibold">Name</th>
-            <th className="py-2 pr-2 text-right font-semibold">Menge</th>
+            <th className="py-2 pr-2 text-right font-semibold">Stück</th>
             <th className="py-2 pr-2 text-right font-semibold">Zeit</th>
-            <th className="py-2 text-right font-semibold">pro Std.</th>
+            <th className="py-2 pr-2 text-right font-semibold">Ist/Soll pro Std.</th>
+            <th className="py-2 text-right font-semibold">Leistungsgrad %</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#eef2ee]">
@@ -216,11 +270,16 @@ function SummaryTable({ title, rows }: { title: string; rows: PerformanceSummary
               </td>
               <td className="py-2 pr-2 text-right tabular-nums">{numberFormat.format(row.quantity)}</td>
               <td className="py-2 pr-2 text-right whitespace-nowrap">{formatDuration(row.durationMinutes)}</td>
-              <td className="py-2 text-right tabular-nums">{rateFormat.format(row.perHour)}</td>
+              <td className="py-2 pr-2 text-right tabular-nums">
+                {rateFormat.format(row.perHour)}
+                {row.targetPerHour !== null && <span className="block text-xs text-[#5e7366]">Soll {rateFormat.format(row.targetPerHour)}</span>}
+              </td>
+              <td className="py-2 text-right"><AchievementBadge percent={row.achievement} /></td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }

@@ -63,7 +63,7 @@ function paintDayCell(cell: ExcelJS.Cell, day: DayCell, text: string) {
   const marks = [
     ...(day.holiday ? [`Feiertag: ${day.holiday}`] : []),
     ...day.companyDays.map((name) => `Sondertag: ${name}`),
-    ...(day.assignmentArea ? [`Einsatz: ${day.assignmentArea}`] : []),
+    ...(day.assignmentArea ? [`${day.additionalShift ? "Zusatzschicht" : "Einsatz"}: ${day.assignmentArea}`] : []),
   ];
   if (marks.length > 0) cell.note = marks.join("\n");
   cell.border = {
@@ -140,6 +140,23 @@ export async function createWorkbook(result: ExportResult): Promise<Buffer> {
   workbook.creator = "Mitarbeiter-App";
   workbook.created = new Date();
 
+  if (result.type === "performance") {
+    const { data } = result;
+    const sheet = addTable(
+      workbook, "Leistungen", "Leistungsauswertung",
+      `${formatDateDe(data.from)} – ${formatDateDe(data.to)} · Sollwerte zum Erfassungszeitpunkt`,
+      ["Datum", "Mitarbeiter", "Personalnummer", "Schicht", "Bereich", "Arbeitsplatz", "Menge",
+        "Arbeitszeit (Min.)", "Soll Stück/Std.", "Ist Stück/Std.", "Leistungsgrad %", "Bemerkung", "Erfasst am"],
+      data.rows.map((row) => [
+        formatDateDe(row.workDate), row.employeeName, row.personnelNumber, row.shift, row.areaLabel,
+        row.workstation, row.quantity, row.durationMinutes, row.targetPerHour ?? "Nicht hinterlegt",
+        row.perHour, row.achievement ?? "Nicht hinterlegt", row.note ?? "", row.createdAt,
+      ]),
+      [14, 26, 16, 12, 22, 14, 14, 20, 18, 18, 20, 36, 26],
+    );
+    for (const column of [9, 10, 11]) sheet.getColumn(column).numFmt = "0.0";
+  }
+
   if (result.type === "week" || result.type === "staffing") {
     const { data } = result;
     const period = `KW ${data.week} · ${formatDateDe(data.monday)} – ${formatDateDe(data.sunday)} · Feiertage ${data.stateName}`;
@@ -178,7 +195,7 @@ export async function createWorkbook(result: ExportResult): Promise<Buffer> {
             added.getCell(column).font = { size: 10 };
           });
           row.cells.forEach((cell, index) => {
-            const text = cell.assignmentArea ? `${cell.kind}\nEinsatz: ${cell.assignmentArea}` : cell.label;
+            const text = cell.assignmentArea ? `${cell.kind}\n${cell.additionalShift ? "Zusatzschicht" : "Einsatz"}: ${cell.assignmentArea}` : cell.label;
             paintDayCell(added.getCell(index + 4), cell, text);
           });
           added.height = row.cells.some((cell) => cell.assignmentArea) ? 30 : 18;
@@ -224,12 +241,12 @@ export async function createWorkbook(result: ExportResult): Promise<Buffer> {
     sheet.getColumn(1).width = 13;
     for (let column = 2; column <= 32; column += 1) sheet.getColumn(column).width = 5;
     sheet.addRow([]);
-    sheet.addRow(["Legende: F = Früh · S = Spät · N = Nacht · fr = Frei · U = Urlaub · K = Krank · Sch = Schulung · SU = Sonderurlaub · FZA = Freizeitausgleich · Abw = sonstige Abwesenheit · * = temporärer Einsatz · roter Rand oben = Feiertag"]);
+    sheet.addRow(["Legende: F = Früh · S = Spät · N = Nacht · fr = Frei · U = Urlaub · K = Krank · Sch = Schulung · SU = Sonderurlaub · FZA = Freizeitausgleich · Abw = sonstige Abwesenheit · * = temporärer Einsatz / Zusatzschicht (Details in Zellnotiz) · roter Rand oben = Feiertag"]);
 
     addTable(
       workbook,
       "Feiertage & Einsätze",
-      "Feiertage, Sondertage und Einsätze",
+      "Feiertage, Sondertage, Einsätze und Zusatzschichten",
       `${employeeName(data.employee)} · ${data.year}`,
       ["Art", "Datum / Von", "Bis", "Bezeichnung", "Schicht"],
       [
@@ -241,7 +258,7 @@ export async function createWorkbook(result: ExportResult): Promise<Buffer> {
           "",
         ]),
         ...data.assignments.map((entry) => [
-          "Temporärer Einsatz",
+          entry.additionalShift ? "Zusatzschicht" : "Temporärer Einsatz",
           formatDateDe(entry.startDate),
           formatDateDe(entry.endDate),
           entry.areaName,

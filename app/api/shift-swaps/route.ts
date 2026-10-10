@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       { headers: swapPrivateHeaders },
     );
   } catch (error) {
-    return shiftSwapResponseError(error);
+    return shiftSwapResponseError(error, context);
   }
 }
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     const swap = await swapTransaction((db) => createSwap(db, context, body.data));
     return NextResponse.json(swap, { status: 201, headers: swapPrivateHeaders });
   } catch (error) {
-    return shiftSwapResponseError(error);
+    return shiftSwapResponseError(error, context);
   }
 }
 
@@ -54,6 +54,6 @@ export async function PATCH(request: Request) {
     const swap = await swapTransaction((db) => decideSwap(db, context, body.data.id, body.data.action));
     return NextResponse.json(swap, { headers: swapPrivateHeaders });
   } catch (error) {
-    return shiftSwapResponseError(error);
+    return shiftSwapResponseError(error, context);
   }
 }

@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
+import { assertNoAdditionalPeriod } from "@/lib/additional-shift-conflicts";
+import { AdditionalShiftError } from "@/lib/additional-shift-rules";
 import { prisma } from "@/lib/prisma";
 import {
   getAuthorizationContext,
@@ -163,9 +166,12 @@ export async function GET() {
 
   const seeAll = canSeeAll(context);
   if (!seeAll && !hasPermission(context, "ownShiftPlan")) return forbidden();
+  if (!seeAll && !context.employeeId) {
+    return NextResponse.json({ error: "Kein Mitarbeiterkonto zugeordnet" }, { status: 403 });
+  }
 
   const records = await prisma.temporaryAssignment.findMany({
-    where: seeAll ? undefined : { employeeId: context.employeeId ?? "__none__" },
+    where: seeAll ? undefined : { employeeId: { in: context.employeeId ? [context.employeeId] : [] } },
     include: temporaryAssignmentRelations,
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
@@ -173,7 +179,7 @@ export async function GET() {
   return NextResponse.json(records.map(toTemporaryAssignmentDto));
 }
 
-export async function POST(request: Request) {
+async function createAssignment(request: Request) {
   const context = await getAuthorizationContext();
   if (!context) return unauthorized();
   if (!hasPermission(context, "editAssignments")) return forbidden();
@@ -185,6 +191,7 @@ export async function POST(request: Request) {
   const { input } = validation;
 
   const created = await prisma.$transaction(async (tx) => {
+    await assertNoAdditionalPeriod(tx, input.employeeId, input.startDate, input.endDate);
     const record = await tx.temporaryAssignment.create({
       data: {
         employeeId: input.employeeId,
@@ -201,7 +208,7 @@ export async function POST(request: Request) {
       ...record, shift: record.shift ? fromShiftCode(record.shift) : null,
     }, "created"));
     return record;
-  });
+  }, { isolationLevel: "Serializable" });
   const dto = toTemporaryAssignmentDto(created);
 
   await recordAuditLog({
@@ -219,7 +226,7 @@ export async function POST(request: Request) {
   );
 }
 
-export async function PATCH(request: Request) {
+async function changeAssignment(request: Request) {
   const context = await getAuthorizationContext();
   if (!context) return unauthorized();
   if (!hasPermission(context, "editAssignments")) return forbidden();
@@ -285,6 +292,7 @@ export async function PATCH(request: Request) {
   const { input } = validation;
 
   const updated = await prisma.$transaction(async (tx) => {
+    await assertNoAdditionalPeriod(tx, before.employeeId, input.startDate, input.endDate);
     const changed = await tx.temporaryAssignment.updateMany({
       where: { id: before.id, cancelledAt: null, updatedAt: existingRecord.updatedAt },
       data: {
@@ -310,7 +318,7 @@ export async function PATCH(request: Request) {
       }));
     }
     return record;
-  });
+  }, { isolationLevel: "Serializable" });
   if (!updated) {
     return NextResponse.json({ error: "Der Einsatz wurde inzwischen geändert. Bitte neu laden." }, { status: 409 });
   }
@@ -326,4 +334,25 @@ export async function PATCH(request: Request) {
   });
 
   return NextResponse.json({ assignment: dto, qualificationCheck: await getQualificationCheck(input) });
+}
+
+export async function POST(request: Request) {
+  try { return await createAssignment(request); }
+  catch (error) {
+    if (error instanceof AdditionalShiftError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+      return NextResponse.json({ error: "Die Planung wurde gleichzeitig geändert. Bitte neu laden und erneut prüfen." }, { status: 409 });
+    }
+    throw error;
+  }
+}
+export async function PATCH(request: Request) {
+  try { return await changeAssignment(request); }
+  catch (error) {
+    if (error instanceof AdditionalShiftError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+      return NextResponse.json({ error: "Die Planung wurde gleichzeitig geändert. Bitte neu laden und erneut prüfen." }, { status: 409 });
+    }
+    throw error;
+  }
 }

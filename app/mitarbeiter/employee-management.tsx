@@ -7,7 +7,6 @@ import {
   createEmployeeDraft,
   employeeRoles,
   permissionOptions,
-  sampleEmployees,
   shiftGroups,
   type Employee,
   type EmployeePermissions,
@@ -17,13 +16,12 @@ import { employeeRepository } from "./repository";
 import { AccountBadge, AccountPanel, OneTimePasswordNotice, TemporaryPasswordInput } from "./account-section";
 import { EmployeeRemovalPanel } from "./deletion-section";
 import { passwordPolicyErrors } from "@/lib/password-policy";
-import { sampleAreaConfiguration, type WorkArea } from "../admin/areas-data";
+import type { WorkArea } from "../admin/areas-data";
 import { areaRepository } from "../admin/areas-repository";
 import { qualificationsRepository } from "../admin/qualifications-repository";
 import {
   qualificationLevels,
   qualificationLevelShortLabels,
-  sampleQualifications,
   type Qualification,
   type QualificationLevel,
 } from "../admin/qualifications-data";
@@ -43,20 +41,22 @@ function areaName(areaId: string | null, areas: readonly WorkArea[]) {
   return areas.find((area) => area.id === areaId)?.name ?? "Unbekannter Bereich";
 }
 
-export default function EmployeeManagement() {
-  const [employees, setEmployees] = useState(sampleEmployees);
+export default function EmployeeManagement({ access }: {
+  access: { role: string; employeeId: string | null; permissions: Record<string, boolean> };
+}) {
+  const session = {
+    canManageAccounts: access.role === "ADMIN" && access.permissions.editEmployees === true,
+    employeeId: access.employeeId,
+  };
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("Alle Rollen");
   const [statusFilter, setStatusFilter] = useState("Alle");
   const [draft, setDraft] = useState<Employee | null>(null);
   const [formError, setFormError] = useState("");
-  const [areas, setAreas] = useState<WorkArea[]>(sampleAreaConfiguration.areas);
-  const [qualifications, setQualifications] = useState<Qualification[]>(sampleQualifications);
+  const [areas, setAreas] = useState<WorkArea[]>([]);
+  const [qualifications, setQualifications] = useState<Qualification[]>([]);
   const [qualificationError, setQualificationError] = useState("");
-  const [session, setSession] = useState<{ canManageAccounts: boolean; employeeId: string | null }>({
-    canManageAccounts: false,
-    employeeId: null,
-  });
   const [startPassword, setStartPassword] = useState("");
   const [startPasswordGenerated, setStartPasswordGenerated] = useState(false);
   const [createdAccount, setCreatedAccount] = useState<{ name: string; login: string; password: string } | null>(null);
@@ -65,26 +65,11 @@ export default function EmployeeManagement() {
 
   useEffect(() => {
     let isCurrent = true;
-    void fetch("/api/session", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: { role?: string; employeeId?: string | null; permissions?: Record<string, boolean> } | null) => {
-        if (!isCurrent || !body) return;
-        setSession({
-          canManageAccounts: body.role === "ADMIN" && body.permissions?.editEmployees === true,
-          employeeId: body.employeeId ?? null,
-        });
-      })
-      .catch(() => undefined);
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isCurrent = true;
 
     void employeeRepository.loadAll().then((storedEmployees) => {
       if (isCurrent && storedEmployees) setEmployees(storedEmployees);
+    }).catch((error: unknown) => {
+      if (isCurrent) setFormError(error instanceof Error ? error.message : "Mitarbeiter konnten nicht geladen werden.");
     });
 
     return () => {
@@ -97,6 +82,8 @@ export default function EmployeeManagement() {
 
     void areaRepository.load().then((configuration) => {
       if (isCurrent) setAreas(configuration.areas);
+    }).catch((error: unknown) => {
+      if (isCurrent) setFormError(error instanceof Error ? error.message : "Bereiche konnten nicht geladen werden.");
     });
 
     return () => {
@@ -107,14 +94,17 @@ export default function EmployeeManagement() {
   useEffect(() => {
     let isCurrent = true;
 
+    if (!access.permissions.viewQualifications && !access.permissions.editQualifications && !access.permissions.manageQualifications) return;
     void qualificationsRepository.loadAll().then((storedQualifications) => {
       if (isCurrent) setQualifications(storedQualifications);
+    }).catch((error: unknown) => {
+      if (isCurrent) setQualificationError(error instanceof Error ? error.message : "Qualifikationen konnten nicht geladen werden.");
     });
 
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [access.permissions]);
 
   const filteredEmployees = employees
     .filter((employee) => {
@@ -343,6 +333,7 @@ export default function EmployeeManagement() {
           </div>
           <button
             type="button"
+            hidden={!session.canManageAccounts}
             onClick={openNewEmployee}
             className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-lg bg-[#174c37] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#103d2b] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[#174c37] sm:self-auto"
           >
@@ -498,6 +489,7 @@ export default function EmployeeManagement() {
                       <td className="px-4 py-4 text-right">
                         <button
                           type="button"
+                          hidden={!session.canManageAccounts}
                           onClick={() => openEditEmployee(employee)}
                           className="rounded-md px-3 py-2 text-xs font-semibold text-[#286044] transition hover:bg-[#eaf2eb] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]"
                         >
@@ -540,6 +532,7 @@ export default function EmployeeManagement() {
                 </dl>
                 <button
                   type="button"
+                  hidden={!session.canManageAccounts}
                   onClick={() => openEditEmployee(employee)}
                   className="mt-4 min-h-10 w-full rounded-lg border border-[#ccdbcf] text-sm font-semibold text-[#286044] transition hover:bg-[#f4f8f4] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]"
                 >
@@ -781,6 +774,7 @@ export default function EmployeeManagement() {
                             <label className="sr-only" htmlFor={`profile-level-${qualification.id}`}>{qualification.name}, Qualifikationsstufe</label>
                             <select
                               id={`profile-level-${qualification.id}`}
+                              disabled={!access.permissions.editQualifications}
                               value={level}
                               onChange={(event) => void setQualificationLevel(draft.id, qualification.id, Number(event.target.value) as QualificationLevel)}
                               className="h-9 w-40 shrink-0 rounded-lg border border-[#dce4dc] bg-white px-2 text-sm outline-none focus:border-[#71937d] focus:ring-2 focus:ring-[#174c37]/10"

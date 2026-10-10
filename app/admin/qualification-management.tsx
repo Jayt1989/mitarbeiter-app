@@ -4,17 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
-import { getDemoAdmin } from "../urlaub/session";
 import { areaRepository } from "./areas-repository";
-import { sampleAreaConfiguration, type AreaConfiguration } from "./areas-data";
+import type { AreaConfiguration } from "./areas-data";
 import { qualificationsRepository } from "./qualifications-repository";
 import {
   qualificationLevels,
   qualificationLevelLabels,
   qualificationLevelShortLabels,
-  sampleQualifications,
   type Qualification,
   type QualificationLevel,
 } from "./qualifications-data";
@@ -28,10 +25,10 @@ function areaName(areaId: string | null, areas: AreaConfiguration["areas"]) {
   return areas.find((area) => area.id === areaId)?.name ?? "Unbekannter Bereich";
 }
 
-export default function QualificationManagement() {
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
-  const [qualifications, setQualifications] = useState<Qualification[]>(sampleQualifications);
-  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>(sampleAreaConfiguration);
+export default function QualificationManagement({ permissions }: { permissions: Record<string, boolean> }) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [qualifications, setQualifications] = useState<Qualification[]>([]);
+  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
   const [pageView, setPageView] = useState<PageView>("Matrix");
 
   const [newQualificationName, setNewQualificationName] = useState("");
@@ -49,7 +46,7 @@ export default function QualificationManagement() {
     let isCurrent = true;
 
     void Promise.all([
-      employeeRepository.loadAll(),
+      employeeRepository.loadOverview("qualifications"),
       qualificationsRepository.loadAll(),
       areaRepository.load(),
     ]).then(([storedEmployees, storedQualifications, storedAreas]) => {
@@ -57,6 +54,8 @@ export default function QualificationManagement() {
       if (storedEmployees) setEmployees(storedEmployees);
       setQualifications(storedQualifications);
       setAreaConfiguration(storedAreas);
+    }).catch((error: unknown) => {
+      if (isCurrent) setCatalogError(error instanceof Error ? error.message : "Qualifikationen konnten nicht geladen werden.");
     });
 
     return () => {
@@ -64,14 +63,13 @@ export default function QualificationManagement() {
     };
   }, []);
 
-  const admin = getDemoAdmin(employees);
-  const canManageCatalog = admin?.permissions.manageQualifications ?? false;
-  const canEditLevels = admin?.permissions.editQualifications ?? false;
+  const canManageCatalog = permissions.manageQualifications === true;
+  const canEditLevels = permissions.editQualifications === true;
   const canView =
-    canManageCatalog || canEditLevels || (admin?.permissions.viewQualifications ?? false);
+    canManageCatalog || canEditLevels || permissions.viewQualifications === true;
 
   async function reloadEmployees() {
-    const storedEmployees = await employeeRepository.loadAll();
+    const storedEmployees = await employeeRepository.loadOverview("qualifications");
     if (storedEmployees) setEmployees(storedEmployees);
   }
 

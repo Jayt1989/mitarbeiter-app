@@ -32,6 +32,7 @@ function employee(id: string, model: string): EmployeeRecord {
     shiftModel: { id: model, code: model, name: model, active: true, rotationOrder: [], workingWeekdays: [1, 2, 3, 4, 5] },
     shiftGroup: { id: "group-a", code: "A", name: "Gruppe A", startShift: "EARLY", anchorDate: now, active: true },
     departments: [], permissions: [], shiftAssignments: [], qualifications: [], user: null,
+    additionalShifts: [],
   };
 }
 

@@ -66,6 +66,7 @@ export type SwapDayFacts = {
   manual: boolean;
   assignment: boolean;
   openSwap: boolean;
+  additionalShift?: boolean;
 };
 
 export function swapDayWarnings(facts: SwapDayFacts): string[] {
@@ -78,5 +79,6 @@ export function swapDayWarnings(facts: SwapDayFacts): string[] {
   if (facts.manual) warnings.push(`${prefix}Es besteht bereits eine manuelle Schichtzuweisung.`);
   if (facts.assignment) warnings.push(`${prefix}Es besteht ein temporärer Einsatz.`);
   if (facts.openSwap) warnings.push(`${prefix}Es besteht bereits eine offene Tauschanfrage für diesen Tag.`);
+  if (facts.additionalShift) warnings.push(`${prefix}Es besteht eine Zusatzschicht. Diese muss über die Zusatzschichtplanung geändert werden.`);
   return warnings;
 }

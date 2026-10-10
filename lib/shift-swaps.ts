@@ -95,6 +95,7 @@ export async function loadSwapDays(
       ),
       assignment: assignments.some((entry) => entry.employeeId === record.id),
       openSwap: swaps.some((entry) => entry.requesterId === record.id || entry.partnerId === record.id),
+      additionalShift: record.additionalShifts.some((entry) => entry.date.getTime() === date.getTime()),
     };
     return {
       id: record.id,

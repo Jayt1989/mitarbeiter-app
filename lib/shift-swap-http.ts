@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { ShiftSwapError } from "./shift-swap-rules";
+import { hasPermission, type AuthorizationContext } from "./authorization";
 
 export const swapPrivateHeaders = { "Cache-Control": "private, no-store" };
 
-export function shiftSwapResponseError(error: unknown) {
+export function shiftSwapResponseError(error: unknown, context?: AuthorizationContext) {
   if (error instanceof ShiftSwapError) {
-    return NextResponse.json({ error: error.message, warnings: error.warnings }, {
+    const showDetails = context && hasPermission(context, "otherVacations") && hasPermission(context, "recordAbsence");
+    const warnings = showDetails || !error.warnings.length ? error.warnings
+      : ["Der Tausch ist an diesem Tag wegen eines Planungskonflikts nicht möglich."];
+    return NextResponse.json({ error: error.message, warnings }, {
       status: error.status, headers: swapPrivateHeaders,
     });
   }

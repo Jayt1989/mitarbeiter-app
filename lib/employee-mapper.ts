@@ -17,6 +17,10 @@ export const employeeRelations = {
   departments: { include: { department: true } },
   permissions: { include: { permission: true } },
   shiftAssignments: true,
+  additionalShifts: {
+    where: { status: "FREIGEGEBEN" },
+    include: { department: { select: { name: true } } },
+  },
   qualifications: true,
   user: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
 } satisfies Prisma.EmployeeInclude;
@@ -70,6 +74,11 @@ export function toEmployeeDto(record: EmployeeRecord): Employee {
     carryOverLeaveDays: record.carryOverLeaveDays,
     permissions,
     individualAssignments,
+    additionalShifts: Object.fromEntries(record.additionalShifts.map((entry) => [
+      entry.date.toISOString().slice(0, 10),
+      { id: entry.id, shift: entry.shift === "EARLY" ? "Früh" : entry.shift === "LATE" ? "Spät" : "Nacht",
+        departmentId: entry.departmentId, departmentName: entry.department.name },
+    ])),
     qualifications,
     // Nur Statusinformationen – Passwort-Hash verlässt nie den Server.
     account: record.user

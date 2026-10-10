@@ -3,6 +3,8 @@ import NotificationBell from "@/app/components/notification-bell";
 import NotificationSummary from "@/app/components/notification-summary";
 import type { ReactNode } from "react";
 import type { DashboardDay, PersonalDashboardData } from "@/lib/personal-dashboard";
+import { performanceDashboardLink } from "@/lib/performance-rules";
+import { shiftTimeLabel } from "@/lib/shift-interval";
 import { absenceStyles, companyDayMarkerStyle, holidayMarkerStyle, shiftStyles } from "../schichtplan/shift-styles";
 import { qualificationLevelLabels, type QualificationLevel } from "../admin/qualifications-data";
 
@@ -50,9 +52,12 @@ function dayStyle(day: DashboardDay) {
 
 export default function PersonalDashboard({ data }: { data: PersonalDashboardData }) {
   const { employee, permissions } = data;
+  const performanceLink = performanceDashboardLink(permissions);
   const quickLinks = [
-    permissions.performance && { href: "/leistung", title: "Leistung erfassen", text: "Menge und Arbeitszeit eintragen" },
-    permissions.performanceReport && { href: "/admin/leistung", title: "Leistungsauswertung", text: "Erfasste Leistungen auswerten" },
+    permissions.additionalShifts && { href: "/admin/zusatzschichten", title: "Zusatzschichten", text: "Wochenendarbeit planen und freigeben" },
+    performanceLink,
+    permissions.performanceReport && permissions.performance && { href: "/leistung", title: "Leistung erfassen", text: "Menge und Arbeitszeit eintragen" },
+    permissions.performanceTargets && { href: "/admin/leistung/arbeitsplaetze", title: "Arbeitsplatz-Sollwerte", text: "Soll-Stückzahlen pro Stunde pflegen" },
     permissions.yearPlan && { href: "/schichtplan", title: "Jahres-Schichtplan", text: "Alle Dienste des Jahres" },
     permissions.requestVacation && { href: "/urlaub?antrag=neu", title: "Urlaub beantragen", text: "Neuen Antrag stellen" },
     permissions.ownVacation && { href: "/urlaub#antraege-eigen-titel", title: "Meine Urlaubsanträge", text: "Status deiner Anträge" },
@@ -86,8 +91,8 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
                 Urlaub
               </Link>
             )}
-            {permissions.performance && (
-              <Link href="/leistung" className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]">
+            {performanceLink && (
+              <Link href={performanceLink.href} className="rounded-lg px-3 py-2 text-sm font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37]">
                 Leistung
               </Link>
             )}
@@ -111,6 +116,13 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
         </section>
 
         <NotificationSummary />
+        {data.upcomingAdditionalShift?.additionalShift && <section aria-label="Bevorstehende Zusatzschicht"
+          className="mt-6 rounded-xl border border-[#ecd49a] bg-[#fff3d9] p-5">
+          <h2 className="font-semibold text-[#886719]">Zusatzschicht</h2>
+          <p className="mt-1 font-semibold">{formatDate(data.upcomingAdditionalShift.date, { weekday: "long" })}, {fullDate(data.upcomingAdditionalShift.date)} · {dayHeadline(data.upcomingAdditionalShift)}</p>
+          <p className="mt-1 text-sm">{data.upcomingAdditionalShift.areaName} · {shiftTimeLabel(data.upcomingAdditionalShift.additionalShift.shift)}</p>
+          <Link href="/schichtplan" className="mt-3 inline-block text-sm font-semibold underline">Zum Schichtplan</Link>
+        </section>}
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {data.today && (
@@ -123,6 +135,7 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
                 <span id="heute-titel">HEUTE</span> · {formatDate(data.todayKey, { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}
               </p>
               <p className="relative mt-3 text-3xl font-semibold sm:text-4xl">{dayHeadline(data.today)}</p>
+              {data.today.additionalShift && <p className="relative mt-2 font-semibold">Zusatzschicht · {shiftTimeLabel(data.today.additionalShift.shift)}</p>}
               {data.today.kind === "shift" && (
                 <p className="relative mt-2 text-sm text-[#d4e4d9] sm:text-base">
                   {data.today.assignment
@@ -160,6 +173,7 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
                     {formatDate(data.nextShift.date, { weekday: "long" })}, {fullDate(data.nextShift.date)}
                   </p>
                   <p className="mt-2 text-2xl font-semibold">{dayHeadline(data.nextShift)}</p>
+                  {data.nextShift.additionalShift && <p className="mt-1 text-sm font-semibold text-[#886719]">Zusatzschicht</p>}
                   <p className="mt-1 text-sm text-[#526056]">{data.nextShift.areaName ?? "Kein Bereich"}</p>
                   {data.nextShift.assignment && (
                     <p className="mt-2 text-xs font-semibold text-[#9a4c16]">

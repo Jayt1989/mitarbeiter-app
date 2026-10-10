@@ -28,7 +28,7 @@ function fixture() {
 test("own-only shift plan filters by the real employee ID, not the selected employee or demo user", async () => {
   const db = fixture();
   mock.method(db.employee, "findMany", async (args: Prisma.EmployeeFindManyArgs) => {
-    assert.deepEqual(args.where, { isActive: true, id: "employee-a" });
+    assert.deepEqual(args.where, { isActive: true, id: { in: ["employee-a"] } });
     return [];
   });
   const result = await loadShiftPlan(context, false, db);
@@ -41,7 +41,7 @@ test("team shift plan permission allows selecting all active employees", async (
     assert.deepEqual(args.where, { isActive: true });
     return [];
   });
-  await loadShiftPlan({ ...context, permissions: { teamShiftPlan: true } }, false, db);
+  await loadShiftPlan({ ...context, role: "FOREMAN", permissions: { teamShiftPlan: true } }, false, db);
 });
 
 test("staffing preserves existing admin employee-view access without granting team-plan rights", async () => {
@@ -56,7 +56,7 @@ test("staffing preserves existing admin employee-view access without granting te
   });
   await loadShiftPlan(admin, true, db);
   await loadShiftPlan(admin, false, db);
-  assert.deepEqual(filters, [{ isActive: true }, { isActive: true, id: "employee-a" }]);
+  assert.deepEqual(filters, [{ isActive: true }, { isActive: true, id: { in: ["employee-a"] } }]);
 });
 
 test("own-plan rights alone do not authorize reading team staffing", async () => {

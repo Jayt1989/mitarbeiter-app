@@ -22,12 +22,13 @@ function canView(permissions: Record<string, boolean>) {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const context = await getAuthorizationContext();
   if (!context) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
-  if (!canView(context.permissions)) {
+  const assignmentScope = new URL(request.url).searchParams.get("scope") === "assignments";
+  if (!(assignmentScope ? hasPermission(context, "editAssignments") : canView(context.permissions))) {
     return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
   }
 

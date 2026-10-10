@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAuthorizationContext } from "@/lib/authorization";
 import { loadPersonalDashboard } from "@/lib/personal-dashboard";
+import { canAccessPage } from "@/lib/access-policy";
 import PersonalDashboard from "./personal-dashboard";
 
 export const metadata: Metadata = {
@@ -14,9 +15,7 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  if (session.user.role === "ADMIN") redirect("/admin");
-  if (session.user.role === "FOREMAN") redirect("/schichtplan");
-
+  if (session.user.role === "ADMIN" && canAccessPage(session.user, "/admin")) redirect("/admin");
   const context = await getAuthorizationContext();
   if (!context) redirect("/login");
 

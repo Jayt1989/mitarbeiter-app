@@ -12,6 +12,8 @@ import { getAssignmentForDay, type TemporaryAssignment } from "@/app/admin/assig
 import type { AbsenceType } from "@/app/admin/staffing-data";
 import { addDaysToKey, berlinNowParts, dateKeyToUtc, getCalendarMarks, type CalendarMarks } from "@/lib/calendar";
 import { loadCalendarData } from "@/lib/calendar-server";
+import { performanceVisibility } from "@/lib/performance-rules";
+import { canAdditionalShift } from "@/lib/additional-shift-rules";
 
 /** Anzeige ohne medizinische Details: Krankheit erscheint nur als „Krank / abwesend“. */
 const absenceLabels: Record<PrismaAbsenceType, string> = {
@@ -48,6 +50,7 @@ export type DashboardDay = {
   areaName: string | null;
   assignment: TemporaryAssignment | null;
   marks: CalendarMarks;
+  additionalShift?: NonNullable<Employee["additionalShifts"]>[string] | null;
 };
 
 export type PersonalDashboardData = {
@@ -65,9 +68,12 @@ export type PersonalDashboardData = {
     shiftSwap: boolean;
     performance: boolean;
     performanceReport: boolean;
+    performanceTargets: boolean;
+    additionalShifts?: boolean;
   };
   today: DashboardDay | null;
   nextShift: DashboardDay | null;
+  upcomingAdditionalShift?: DashboardDay | null;
   week: DashboardDay[];
   vacation: {
     year: number;
@@ -115,9 +121,8 @@ export async function loadPersonalDashboard(
     qualifications:
       context.permissions.ownQualifications === true || context.permissions.viewQualifications === true,
     shiftSwap: context.permissions.requestShiftSwap === true,
-    performance: context.permissions.recordPerformance === true,
-    performanceReport: (context.role === "ADMIN" || context.role === "FOREMAN") &&
-      context.permissions.viewPerformance === true,
+    additionalShifts: canAdditionalShift(context, "viewAdditionalShifts"),
+    ...performanceVisibility(context),
   };
 
   const { dateKey: todayKey, hour } = berlinNowParts();
@@ -183,7 +188,8 @@ export async function loadPersonalDashboard(
   function dayInfo(dateKey: string): DashboardDay {
     const shift = getShiftForDate(toDate(dateKey), plan);
     const marks = getCalendarMarks(dateKey, calendar);
-    const base = { date: dateKey, shift, marks, absence: null, areaName: null, assignment: null };
+    const additionalShift = employee.additionalShifts?.[dateKey] ?? null;
+    const base = { date: dateKey, shift, marks, absence: null, areaName: null, assignment: null, additionalShift };
     const covers = (entry: { startDate: string; endDate: string }) =>
       entry.startDate <= dateKey && entry.endDate >= dateKey;
 
@@ -199,7 +205,7 @@ export async function loadPersonalDashboard(
     return {
       ...base,
       kind: "shift",
-      areaName: assignment?.areaName ?? areaName,
+      areaName: additionalShift?.departmentName ?? assignment?.areaName ?? areaName,
       assignment,
     };
   }
@@ -247,6 +253,9 @@ export async function loadPersonalDashboard(
     permissions,
     today: permissions.shiftPlan ? dayInfo(todayKey) : null,
     nextShift,
+    upcomingAdditionalShift: permissions.shiftPlan
+      ? Object.keys(employee.additionalShifts ?? {}).sort().filter((date) => date >= todayKey)
+        .map(dayInfo).find((day) => day.kind === "shift") ?? null : null,
     week: permissions.shiftPlan
       ? Array.from({ length: 7 }, (_, index) => dayInfo(addDays(weekStart, index)))
       : [],

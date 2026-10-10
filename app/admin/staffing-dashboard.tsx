@@ -1,10 +1,10 @@
 "use client";
 
+import { canAccessPage } from "@/lib/access-policy";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
 import { shiftPlanRepository } from "../schichtplan/repository";
 import {
   formatDate,
@@ -18,10 +18,9 @@ import {
   type TrafficLight,
 } from "./staffing";
 import { absenceTypes, type AbsenceEntry } from "./staffing-data";
-import { sampleVacationRequests, type VacationRequest } from "../urlaub/vacation-data";
+import type { VacationRequest } from "../urlaub/vacation-data";
 import { areaRepository } from "./areas-repository";
 import {
-  sampleAreaConfiguration,
   type AreaConfiguration,
   type WorkArea,
 } from "./areas-data";
@@ -37,6 +36,7 @@ import {
   type CalendarData,
 } from "@/lib/calendar";
 import { companyDayBadgeStyle, holidayBadgeStyle } from "../schichtplan/shift-styles";
+import type { performanceDashboardLink } from "@/lib/performance-rules";
 
 const trafficStyles: Record<TrafficLight, string> = {
   green: "bg-[#e7f3e9] text-[#256440]",
@@ -108,14 +108,18 @@ function matchesFilter(employee: EmployeeDay, filter: StaffFilter) {
   return employee.shift === filter;
 }
 
-export default function StaffingDashboard({ initialDate }: { initialDate?: string }) {
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
+export default function StaffingDashboard({ initialDate, performanceLink, access }: {
+  initialDate?: string;
+  performanceLink: ReturnType<typeof performanceDashboardLink>;
+  access: { role: string; permissions: Record<string, boolean> };
+}) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => initialDate ?? berlinTodayKey());
   const [viewMode, setViewMode] = useState<ViewMode>("Woche");
   const [staffFilter, setStaffFilter] = useState<StaffFilter>("Alle Mitarbeiter");
   const [areaFilter, setAreaFilter] = useState<AreaFilter>("Alle Bereiche");
-  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>(sampleAreaConfiguration);
-  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>(sampleVacationRequests);
+  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
+  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
   const [assignments, setAssignments] = useState<TemporaryAssignment[]>([]);
   const [calendar, setCalendar] = useState<CalendarData>(defaultCalendarData);
   const [recordedAbsences, setRecordedAbsences] = useState<AbsenceEntry[]>([]);
@@ -126,6 +130,8 @@ export default function StaffingDashboard({ initialDate }: { initialDate?: strin
 
     void calendarRepository.load().then((storedCalendar) => {
       if (isCurrent) setCalendar(storedCalendar);
+    }).catch((error: unknown) => {
+      if (isCurrent) setPlanningError(error instanceof Error ? error.message : "Kalender konnte nicht geladen werden.");
     });
 
     return () => {
@@ -163,6 +169,8 @@ export default function StaffingDashboard({ initialDate }: { initialDate?: strin
 
     void areaRepository.load().then((configuration) => {
       if (isCurrent) setAreaConfiguration(configuration);
+    }).catch((error: unknown) => {
+      if (isCurrent) setPlanningError(error instanceof Error ? error.message : "Bereiche konnten nicht geladen werden.");
     });
 
     return () => {
@@ -216,50 +224,51 @@ export default function StaffingDashboard({ initialDate }: { initialDate?: strin
             </span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Adminbereiche">
-            <Link href="/admin/schichttausch" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Schichttausch</Link>
-            <Link href="/admin/leistung" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Leistung</Link>
-            <Link
+            {canAccessPage(access, "/admin/zusatzschichten") && <Link href="/admin/zusatzschichten" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Zusatzschichten</Link>}
+            {canAccessPage(access, "/admin/schichttausch") && <Link href="/admin/schichttausch" className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Schichttausch</Link>}
+            {performanceLink && <Link href={performanceLink.href} className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] hover:bg-[#edf3ee] sm:px-3 sm:text-sm">Leistung</Link>}
+            {canAccessPage(access, "/admin/einsatzplanung") && <Link
               href="/admin/einsatzplanung"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
             >
               <span className="sm:hidden">Einsatz</span>
               <span className="hidden sm:inline">Einsatzplanung</span>
-            </Link>
-            <Link
+            </Link>}
+            {canAccessPage(access, "/admin/wochenplan") && <Link
               href="/admin/wochenplan"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
             >
               <span className="sm:hidden">Woche</span>
               <span className="hidden sm:inline">Wochenplan</span>
-            </Link>
-            <Link
+            </Link>}
+            {canAccessPage(access, "/admin/mindestbesetzung") && <Link
               href="/admin/mindestbesetzung"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
             >
               <span className="sm:hidden">Min.</span>
               <span className="hidden sm:inline">Mindestbesetzung</span>
-            </Link>
-            <Link
+            </Link>}
+            {canAccessPage(access, "/admin/qualifikationen") && <Link
               href="/admin/qualifikationen"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
             >
               <span className="sm:hidden">Qual.</span>
               <span className="hidden sm:inline">Qualifikationen</span>
-            </Link>
-            <Link
+            </Link>}
+            {canAccessPage(access, "/admin/urlaub") && <Link
               href="/admin/urlaub"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
             >
               <span className="sm:hidden">Urlaub</span>
               <span className="hidden sm:inline">Urlaubsanträge</span>
-            </Link>
-            <Link
+            </Link>}
+            {canAccessPage(access, "/mitarbeiter") && <Link
               href="/mitarbeiter"
               className="rounded-lg px-2 py-2 text-xs font-medium text-[#41634f] transition hover:bg-[#edf3ee] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#174c37] sm:px-3 sm:text-sm"
             >
               <span className="sm:hidden">Team</span>
               <span className="hidden sm:inline">Mitarbeiter</span>
-            </Link>
+            </Link>}
             <NotificationBell />
           </nav>
         </div>
@@ -320,6 +329,10 @@ export default function StaffingDashboard({ initialDate }: { initialDate?: strin
 
         <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
+            ...(performanceLink ? [{
+              ...performanceLink, label: "LEISTUNG", icon: "M5 20V10m7 10V4m7 16v-7",
+              color: "bg-[#e1f2e8] text-[#197044]",
+            }] : []),
             { href: "/admin/einsatzplanung", label: "VERTRETUNG", title: "Einsatzplanung", text: "Mitarbeiter vorübergehend in anderen Bereichen einsetzen.", icon: "M4 7h11m0 0-3-3m3 3-3 3M20 17H9m0 0 3-3m-3 3 3 3", color: "bg-[#fff0df] text-[#b65d22]" },
             { href: "/admin/einstellungen", label: "EINSTELLUNGEN", title: "Feiertage & Kalender", text: "Bundesland, Feiertage und betriebliche Sondertage.", icon: "M4 6h16v14H4zM4 10h16M8 3v4m8-4v4", color: "bg-[#fde9e7] text-[#a33e31]" },
             { href: "/admin/jahreswechsel", label: "URLAUBSJAHR", title: "Jahreswechsel", text: "Urlaubskonten für das neue Jahr anlegen.", icon: "M12 4v4m0 8v4M4 12h4m8 0h4M6.5 6.5l2.5 2.5m6 6 2.5 2.5m0-11L15 9m-6 6-2.5 2.5", color: "bg-[#e5eff9] text-[#316b9b]" },
@@ -549,6 +562,7 @@ function DayView({
                     </td>
                     <td className="px-4 py-3.5 text-sm text-[#526056]">
                       {row.shift ?? "–"}
+                      {row.additionalShift && <span className="mt-0.5 block text-xs font-semibold text-[#7a4f12]">Zusatzschicht: {row.additionalShift.departmentName}</span>}
                       {row.assignment && (
                         <span className="mt-0.5 block text-xs font-medium text-[#7a4f12]">
                           Einsatz: {row.assignment.areaName}
@@ -581,6 +595,7 @@ function DayView({
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-[#edf0ec] pt-3">
                 <Detail label="Schicht" value={row.shift ?? "–"} />
+                {row.additionalShift && <Detail label="Zusatzschicht" value={row.additionalShift.departmentName} />}
                 <Detail label="Abwesenheitsart" value={row.absenceType ?? "–"} />
                 {row.assignment && (
                   <Detail label="Einsatz" value={row.assignment.areaName} />

@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { compare, hash } from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { effectivePermissions } from "@/lib/access-policy";
 import { authConfig } from "./auth.config";
 
 const credentialsSchema = z.object({
@@ -72,7 +73,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           role: user.role.code,
           employeeId: user.employeeId,
-          permissions,
+          permissions: effectivePermissions(user.role.code, permissions),
           mustChangePassword: user.mustChangePassword,
           passwordChangedAt: user.passwordChangedAt?.getTime() ?? null,
         };
@@ -95,11 +96,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // deren Passwort inzwischen geändert/zurückgesetzt wurde, werden sofort beendet.
       const current = await prisma.user.findUnique({
         where: { id: token.sub },
-        select: {
-          active: true,
-          mustChangePassword: true,
-          passwordChangedAt: true,
-          employee: { select: { isActive: true } },
+        include: {
+          role: { include: { permissions: { include: { permission: true } } } },
+          employee: { include: { permissions: { include: { permission: true } } } },
         },
       });
       if (!current?.active || current.employee?.isActive === false) return null;
@@ -107,6 +106,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return null;
       }
       token.mustChangePassword = current.mustChangePassword;
+      const permissions = Object.fromEntries(
+        current.role.permissions.map((entry) => [entry.permission.key, entry.allowed]),
+      );
+      for (const entry of current.employee?.permissions ?? []) {
+        permissions[entry.permission.key] = entry.allowed;
+      }
+      token.role = current.role.code;
+      token.employeeId = current.employeeId;
+      token.permissions = effectivePermissions(current.role.code, permissions);
+      token.name = current.employee
+        ? `${current.employee.firstName} ${current.employee.lastName}`
+        : current.email ?? current.login;
+      token.email = current.email;
       return token;
     },
     async session({ session, token }) {

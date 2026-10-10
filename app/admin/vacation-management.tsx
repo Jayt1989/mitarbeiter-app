@@ -4,14 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
-import { getScheduledWorkdays, vacationStatuses, sampleVacationRequests, type VacationRequest, type VacationStatus } from "../urlaub/vacation-data";
+import { getScheduledWorkdays, vacationStatuses, type VacationRequest, type VacationStatus } from "../urlaub/vacation-data";
 import { vacationRepository } from "../urlaub/vacation-repository";
-import { getDemoAdmin } from "../urlaub/session";
 import { getDailyStaffing, getStaffingAbsences, getTrafficLight, type TrafficLight } from "./staffing";
 import { areaRepository } from "./areas-repository";
-import { sampleAreaConfiguration, type AreaConfiguration, type WorkArea } from "./areas-data";
+import type { AreaConfiguration, WorkArea } from "./areas-data";
 import { berlinTodayKey, currentBerlinYear, yearOptions } from "@/lib/calendar";
 
 const months = Array.from({ length: 12 }, (_, index) => ({
@@ -134,9 +132,11 @@ function getCalendarDays(year: number, month: number) {
   return { firstWeekday, dayCount };
 }
 
-export default function VacationManagement() {
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
-  const [requests, setRequests] = useState<VacationRequest[]>(sampleVacationRequests);
+export default function VacationManagement({ access }: {
+  access: { employeeId: string | null; permissions: Record<string, boolean> };
+}) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [requests, setRequests] = useState<VacationRequest[]>([]);
   const [pageView, setPageView] = useState<PageView>("Anträge");
   const [statusFilter, setStatusFilter] = useState<RequestFilter>("Alle");
   const [employeeFilter, setEmployeeFilter] = useState("Alle Mitarbeiter");
@@ -147,13 +147,13 @@ export default function VacationManagement() {
   const [calendarDate, setCalendarDate] = useState(() => berlinTodayKey().slice(0, 7));
   const [selectedRequest, setSelectedRequest] = useState<VacationRequest | null>(null);
   const [decisionError, setDecisionError] = useState("");
-  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>(sampleAreaConfiguration);
+  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
 
   useEffect(() => {
     let isCurrent = true;
 
     void Promise.all([
-      employeeRepository.loadAll(),
+      employeeRepository.loadOverview("vacation"),
       vacationRepository.loadAll(),
       areaRepository.load(),
     ]).then(([storedEmployees, storedRequests, storedAreas]) => {
@@ -161,6 +161,8 @@ export default function VacationManagement() {
       if (storedEmployees) setEmployees(storedEmployees);
       setRequests(storedRequests);
       setAreaConfiguration(storedAreas);
+    }).catch((error: unknown) => {
+      if (isCurrent) setDecisionError(error instanceof Error ? error.message : "Urlaubsanträge konnten nicht geladen werden.");
     });
 
     return () => {
@@ -168,12 +170,11 @@ export default function VacationManagement() {
     };
   }, []);
 
-  const admin = getDemoAdmin(employees);
-  const canOpenAdmin = admin?.role === "Admin" && admin.permissions.openAdmin;
-  const canViewOthers = admin?.permissions.otherVacations ?? false;
-  const canApprove = admin?.permissions.approveVacation ?? false;
+  const canOpenAdmin = access.permissions.otherVacations === true || access.permissions.approveVacation === true;
+  const canApprove = access.permissions.approveVacation === true;
+  const canViewOthers = access.permissions.otherVacations === true || canApprove;
   const visibleRequests = requests.filter(
-    (request) => canViewOthers || request.employeeId === admin?.id,
+    (request) => canViewOthers || request.employeeId === access.employeeId,
   );
   const filteredRequests = visibleRequests
     .filter((request) => statusFilter === "Alle" || request.status === statusFilter)

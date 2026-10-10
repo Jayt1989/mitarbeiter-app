@@ -43,6 +43,6 @@ export async function GET(request: Request) {
     const source = await loadExportSource({ from: swap.date, to: swap.date });
     return NextResponse.json(swapStaffingPreview(source, swap), { headers: swapPrivateHeaders });
   } catch (error) {
-    return shiftSwapResponseError(error);
+    return shiftSwapResponseError(error, context);
   }
 }

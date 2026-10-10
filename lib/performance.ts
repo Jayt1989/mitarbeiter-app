@@ -10,11 +10,16 @@ import {
   MAX_SHIFT_MINUTES,
   PerformanceError,
   canRecordPerformance,
+  canManagePerformanceTargets,
+  canViewPerformance,
+  parseWorkstationTarget,
+  performanceMetrics,
   performanceAreaLabels,
   resolvePerformanceShift,
   type PerformanceAreaId,
   type PerformanceInput,
   type ResolvedShift,
+  type PerformanceWorkstation,
 } from "@/lib/performance-rules";
 
 type Db = Prisma.TransactionClient;
@@ -28,6 +33,9 @@ export type PerformanceEntryDto = {
   workstation: string;
   quantity: number;
   durationMinutes: number;
+  targetPerHour: number | null;
+  perHour: number;
+  achievement: number | null;
   note: string | null;
   createdAt: string;
 };
@@ -44,9 +52,40 @@ function toDto(entry: EntryRecord): PerformanceEntryDto {
     workstation: entry.workstation,
     quantity: entry.quantity,
     durationMinutes: entry.durationMinutes,
+    targetPerHour: entry.targetPerHour,
+    ...performanceMetrics(entry),
     note: entry.note,
     createdAt: entry.createdAt.toISOString(),
   };
+}
+
+export async function listPerformanceWorkstations(): Promise<PerformanceWorkstation[]> {
+  return prisma.performanceWorkstation.findMany({
+    select: { code: true, area: true, targetPerHour: true },
+    orderBy: { code: "asc" },
+  });
+}
+
+export async function updatePerformanceTarget(
+  context: AuthorizationContext, code: string, rawTarget: string,
+) {
+  if (!canManagePerformanceTargets(context)) {
+    throw new PerformanceError("Du hast keine Berechtigung, Sollwerte zu ändern.", 403);
+  }
+  const targetPerHour = parseWorkstationTarget(code, rawTarget);
+  await prisma.$transaction(async (tx) => {
+    const workstation = await tx.performanceWorkstation.findUnique({ where: { code } });
+    if (!workstation) throw new PerformanceError("Der Arbeitsplatz wurde nicht gefunden.", 404);
+    await tx.performanceWorkstation.update({ where: { code }, data: { targetPerHour } });
+    await recordAuditLog({
+      actorUserId: context.userId,
+      action: "performance.target.update",
+      entityType: "PerformanceWorkstation",
+      entityId: code,
+      oldValues: { targetPerHour: workstation.targetPerHour },
+      newValues: { targetPerHour },
+    }, tx);
+  });
 }
 
 function assertCanRecord(context: AuthorizationContext): string {
@@ -86,6 +125,7 @@ export type RecordingOverview = {
   personnelNumber: string;
   resolved: ResolvedShift;
   entries: PerformanceEntryDto[];
+  workstations: PerformanceWorkstation[];
 };
 
 export async function loadRecordingOverview(
@@ -93,15 +133,17 @@ export async function loadRecordingOverview(
 ): Promise<RecordingOverview> {
   const employeeId = assertCanRecord(context);
   const { record, resolved } = await resolveShiftForEmployee(prisma, employeeId, now);
-  const entries = await prisma.performanceEntry.findMany({
+  const showDetails = canViewPerformance(context);
+  const entries = showDetails ? await prisma.performanceEntry.findMany({
     where: { employeeId, workDate: dateKeyToUtc(resolved.dateKey) },
     orderBy: { createdAt: "desc" },
-  });
+  }) : [];
   return {
     employeeName: `${record.firstName} ${record.lastName}`,
     personnelNumber: record.personnelNumber,
     resolved,
     entries: entries.map(toDto),
+    workstations: showDetails ? await listPerformanceWorkstations() : [],
   };
 }
 
@@ -125,6 +167,10 @@ export async function createPerformanceEntry(
       );
     }
 
+    const workstation = await tx.performanceWorkstation.findUnique({ where: { code: input.workstation } });
+    if (!workstation || workstation.area !== input.area) {
+      throw new PerformanceError("Der Arbeitsplatz ist für diesen Bereich nicht eingerichtet.", 409);
+    }
     const entry = await tx.performanceEntry.create({
       data: {
         employeeId,
@@ -134,6 +180,7 @@ export async function createPerformanceEntry(
         workstation: input.workstation,
         quantity: input.quantity,
         durationMinutes: input.durationMinutes,
+        targetPerHour: workstation.targetPerHour,
         note: input.note,
         createdById: context.userId,
       },
@@ -151,6 +198,7 @@ export async function createPerformanceEntry(
         workstation: input.workstation,
         quantity: input.quantity,
         durationMinutes: input.durationMinutes,
+        targetPerHour: entry.targetPerHour,
         note: input.note,
       },
     }, tx);

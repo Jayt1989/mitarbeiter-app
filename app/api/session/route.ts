@@ -22,5 +22,5 @@ export async function GET() {
     employeeId: context.employeeId,
     permissions: context.permissions,
     employee,
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

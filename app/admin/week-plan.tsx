@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
 import { shiftPlanRepository } from "../schichtplan/repository";
 import type { AbsenceEntry } from "./staffing-data";
-import { sampleVacationRequests, type VacationRequest } from "../urlaub/vacation-data";
+import type { VacationRequest } from "../urlaub/vacation-data";
 import { areaRepository } from "./areas-repository";
-import { sampleAreaConfiguration, type AreaConfiguration } from "./areas-data";
+import type { AreaConfiguration } from "./areas-data";
 import type { TemporaryAssignment } from "./assignments-data";
 import {
   formatDate,
@@ -47,9 +46,9 @@ function moveDate(value: string, days: number) {
 type Row = { employee: Employee; days: EmployeeDay[] };
 
 export default function WeekPlan() {
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
-  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>(sampleAreaConfiguration);
-  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>(sampleVacationRequests);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
+  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
   const [assignments, setAssignments] = useState<TemporaryAssignment[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => berlinTodayKey());
   const [calendar, setCalendar] = useState<CalendarData>(defaultCalendarData);
@@ -261,11 +260,12 @@ export default function WeekPlan() {
 
 function PlanCell({ day, areaId }: { day: EmployeeDay; areaId: string | null }) {
   const base = "border border-[#e0e7e0] px-1 py-1.5 text-center align-middle";
+  const additionalArea = day.additionalShift?.departmentName;
 
   if (day.effectiveAreaId !== areaId) {
     return (
       <td className={`${base} bg-[#f4f6f2] text-[10px] text-[#8a958d] print:text-[8px]`}>
-        {day.assignment ? `→ ${day.assignment.areaName}` : ""}
+        {day.assignment ? `→ ${day.assignment.areaName}` : additionalArea ? `→ ${additionalArea}` : ""}
       </td>
     );
   }
@@ -278,6 +278,7 @@ function PlanCell({ day, areaId }: { day: EmployeeDay; areaId: string | null }) 
   return (
     <td className={`${base} font-semibold ${shiftCellStyles[day.shift]}`}>
       {shiftShort[day.shift]}
+      {day.additionalShift && <span className="block text-[9px] font-medium print:text-[7px]">Zusatzschicht</span>}
       {day.assignment && (
         <span className="block text-[9px] font-medium print:text-[7px]">Einsatz</span>
       )}

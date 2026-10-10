@@ -1,11 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
-
-function hasPermission(
-  permissions: Record<string, boolean> | undefined,
-  permission: string,
-) {
-  return permissions?.[permission] === true;
-}
+import { canAccessPage } from "./lib/access-policy";
 
 export const passwordChangePath = "/passwort-aendern";
 
@@ -61,48 +55,7 @@ export const authConfig = {
       }
 
       const { role, permissions } = auth.user;
-      if (path.startsWith("/admin/schichttausch")) {
-        return (role === "ADMIN" || role === "FOREMAN") &&
-          hasPermission(permissions, "approveShiftSwap");
-      }
-      // Die Leistungsrechte prüfen Seite und Server Actions mit aktuellen DB-Rechten, damit
-      // bestehende Sitzungen nach der Migration nicht erst neu angemeldet werden müssen.
-      if (path.startsWith("/admin/leistung")) {
-        return role === "ADMIN" || role === "FOREMAN";
-      }
-      if (path.startsWith("/schichttausch")) {
-        return hasPermission(permissions, "requestShiftSwap");
-      }
-      if (path.startsWith("/admin/qualifikationen")) {
-        return hasPermission(permissions, "viewQualifications") ||
-          hasPermission(permissions, "editQualifications") ||
-          hasPermission(permissions, "manageQualifications");
-      }
-      if (path.startsWith("/admin/mindestbesetzung")) {
-        return hasPermission(permissions, "editMinimumStaffing") &&
-          hasPermission(permissions, "editDepartments");
-      }
-      if (path.startsWith("/admin/urlaub")) {
-        return role === "ADMIN" && hasPermission(permissions, "openAdmin") &&
-          (hasPermission(permissions, "otherVacations") ||
-            hasPermission(permissions, "approveVacation"));
-      }
-      if (path.startsWith("/admin")) {
-        return role === "ADMIN" && hasPermission(permissions, "openAdmin");
-      }
-      if (path.startsWith("/mitarbeiter")) {
-        return hasPermission(permissions, "viewEmployees");
-      }
-      if (path.startsWith("/schichtplan")) {
-        return hasPermission(permissions, "ownShiftPlan") ||
-          hasPermission(permissions, "teamShiftPlan");
-      }
-      if (path.startsWith("/urlaub")) {
-        return hasPermission(permissions, "requestVacation") ||
-          hasPermission(permissions, "ownVacation") ||
-          hasPermission(permissions, "otherVacations");
-      }
-      return true;
+      return canAccessPage({ role, permissions: permissions ?? {} }, path);
     },
   },
 } satisfies NextAuthConfig;

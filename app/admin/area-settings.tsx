@@ -5,9 +5,9 @@ import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import { staffedShifts } from "./staffing";
 import { areaRepository } from "./areas-repository";
-import { sampleAreaConfiguration, type AreaConfiguration, type ShiftMinimum, type WorkArea } from "./areas-data";
+import type { AreaConfiguration, ShiftMinimum, WorkArea } from "./areas-data";
 import { qualificationsRepository } from "./qualifications-repository";
-import { sampleQualifications, type Qualification } from "./qualifications-data";
+import type { Qualification } from "./qualifications-data";
 
 function createAreaId(name: string) {
   const slug = name
@@ -20,8 +20,8 @@ function createAreaId(name: string) {
 }
 
 export default function AreaSettings() {
-  const [configuration, setConfiguration] = useState<AreaConfiguration>(sampleAreaConfiguration);
-  const [qualifications, setQualifications] = useState<Qualification[]>(sampleQualifications);
+  const [configuration, setConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
+  const [qualifications, setQualifications] = useState<Qualification[]>([]);
   const [newAreaName, setNewAreaName] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -32,6 +32,8 @@ export default function AreaSettings() {
 
     void areaRepository.load().then((storedConfiguration) => {
       if (isCurrent) setConfiguration(storedConfiguration);
+    }).catch((cause: unknown) => {
+      if (isCurrent) setError(cause instanceof Error ? cause.message : "Bereiche konnten nicht geladen werden.");
     });
 
     return () => {
@@ -44,6 +46,8 @@ export default function AreaSettings() {
 
     void qualificationsRepository.loadAll().then((storedQualifications) => {
       if (isCurrent) setQualifications(storedQualifications);
+    }).catch((cause: unknown) => {
+      if (isCurrent) setError(cause instanceof Error ? cause.message : "Qualifikationen konnten nicht geladen werden.");
     });
 
     return () => {

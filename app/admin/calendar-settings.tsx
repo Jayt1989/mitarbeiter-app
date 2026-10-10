@@ -1,5 +1,6 @@
 "use client";
 
+import { apiJson } from "@/lib/api-client";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
@@ -46,14 +47,14 @@ export default function CalendarSettings() {
 
     void Promise.all([
       calendarRepository.load(),
-      fetch("/api/session", { cache: "no-store" })
-        .then((response) => (response.ok ? response.json() : null))
-        .catch(() => null) as Promise<{ permissions?: Record<string, boolean> } | null>,
+      apiJson<{ permissions: Record<string, boolean> }>("/api/session"),
     ]).then(([storedCalendar, session]) => {
       if (!isCurrent) return;
       setCalendar(storedCalendar);
       setSelectedState(storedCalendar.state);
       setCanEdit(session?.permissions?.editCalendar === true);
+    }).catch((cause: unknown) => {
+      if (isCurrent) setError(cause instanceof Error ? cause.message : "Kalendereinstellungen konnten nicht geladen werden.");
     });
 
     return () => {

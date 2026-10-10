@@ -4,11 +4,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
-import { sampleEmployees } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
 import { getVacationWorkdays, countVacationDaysInYear, requestsOverlap, type VacationRequest, type VacationStatus } from "./vacation-data";
 import { vacationRepository } from "./vacation-repository";
-import { getDemoEmployee } from "./session";
 import YearSelector from "../components/year-selector";
 import { calendarRepository } from "../admin/calendar-repository";
 import type { VacationAccountDto } from "../admin/vacation-years-data";
@@ -39,8 +37,10 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
-export default function VacationDashboard() {
-  const [employees, setEmployees] = useState<Employee[]>(sampleEmployees);
+export default function VacationDashboard({ ownEmployee, permissions }: {
+  ownEmployee: Employee | null; permissions: Record<string, boolean>;
+}) {
+  const [employees, setEmployees] = useState<Employee[]>(ownEmployee ? [ownEmployee] : []);
   const [requests, setRequests] = useState<VacationRequest[]>([]);
   const [year, setYear] = useState(() => currentBerlinYear());
   const [calendar, setCalendar] = useState<CalendarData>(defaultCalendarData);
@@ -56,8 +56,8 @@ export default function VacationDashboard() {
     let isCurrent = true;
 
     void Promise.all([
-      employeeRepository.loadAll(),
-      vacationRepository.loadAll(),
+      permissions.otherVacations ? employeeRepository.loadOverview("vacation") : Promise.resolve(null),
+      permissions.ownVacation || permissions.otherVacations ? vacationRepository.loadAll() : Promise.resolve([]),
       calendarRepository.load(),
     ]).then(([storedEmployees, storedRequests, storedCalendar]) => {
       if (!isCurrent) return;
@@ -65,32 +65,39 @@ export default function VacationDashboard() {
       setRequests(storedRequests);
       setCalendar(storedCalendar);
       if (new URLSearchParams(window.location.search).get("antrag") === "neu") setIsFormOpen(true);
+    }).catch((error: unknown) => {
+      if (isCurrent) setFormError(error instanceof Error ? error.message : "Urlaubsdaten konnten nicht geladen werden.");
     });
 
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [permissions]);
 
   useEffect(() => {
     let isCurrent = true;
+    if (!permissions.ownVacation && !permissions.otherVacations) return;
 
     void fetch(`/api/vacation-accounts?year=${year}`, { cache: "no-store" })
-      .then((response) => (response.ok ? (response.json() as Promise<VacationAccountDto[]>) : []))
-      .catch(() => [] as VacationAccountDto[])
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Urlaubskonto konnte nicht geladen werden.");
+        return response.json() as Promise<VacationAccountDto[]>;
+      })
       .then((storedAccounts) => {
         if (isCurrent) setAccounts(storedAccounts);
+      }).catch((error: unknown) => {
+        if (isCurrent) setFormError(error instanceof Error ? error.message : "Urlaubskonto konnte nicht geladen werden.");
       });
 
     return () => {
       isCurrent = false;
     };
-  }, [year]);
+  }, [year, permissions]);
 
-  const employee = getDemoEmployee(employees);
-  const canRequest = employee?.permissions.requestVacation ?? false;
-  const canSeeOwn = employee?.permissions.ownVacation ?? false;
-  const canSeeOthers = employee?.permissions.otherVacations ?? false;
+  const employee = ownEmployee;
+  const canRequest = employee !== null && permissions.requestVacation === true;
+  const canSeeOwn = permissions.ownVacation === true;
+  const canSeeOthers = permissions.otherVacations === true;
   const ownRequests = employee
     ? requests.filter((request) => request.employeeId === employee.id)
     : [];

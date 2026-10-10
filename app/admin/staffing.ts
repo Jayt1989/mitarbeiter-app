@@ -3,13 +3,11 @@ import { toEmployeeShiftPlan } from "../mitarbeiter/schedule";
 import { getShiftForDate, type ActiveShift, type Shift } from "../schichtplan/rotation";
 import {
   absenceTypes,
-  sampleAbsences,
   type AbsenceEntry,
   type AbsenceType,
 } from "./staffing-data";
 import type { VacationRequest } from "../urlaub/vacation-data";
 import {
-  sampleAreaConfiguration,
   type AreaConfiguration,
   type WorkArea,
 } from "./areas-data";
@@ -33,6 +31,7 @@ export type EmployeeDay = {
   /** Tatsächlicher Bereich an diesem Tag (Hauptbereich oder temporärer Einsatz). */
   effectiveAreaId: string | null;
   assignment: TemporaryAssignment | null;
+  additionalShift?: NonNullable<Employee["additionalShifts"]>[string] | null;
 };
 
 export type ShiftStaffing = {
@@ -79,7 +78,7 @@ export type WeeklyStaffing = {
 
 export function getStaffingAbsences(
   requests: readonly VacationRequest[],
-  recordedAbsences: readonly AbsenceEntry[] = sampleAbsences,
+  recordedAbsences: readonly AbsenceEntry[] = [],
 ): AbsenceEntry[] {
   return [
     ...recordedAbsences,
@@ -132,7 +131,7 @@ export function getDailyStaffing(
   date: Date,
   employees: readonly Employee[],
   absences: readonly AbsenceEntry[],
-  areaConfiguration: AreaConfiguration = sampleAreaConfiguration,
+  areaConfiguration: AreaConfiguration = { areas: [], minimums: {} },
   assignments: readonly TemporaryAssignment[] = [],
 ): DailyStaffing {
   const normalizedDate = new Date(
@@ -167,8 +166,9 @@ export function getDailyStaffing(
       shift,
       status,
       absenceType,
-      effectiveAreaId: assignment?.areaId ?? employee.areaId,
+      effectiveAreaId: employee.additionalShifts?.[dateKey]?.departmentId ?? assignment?.areaId ?? employee.areaId,
       assignment,
+      additionalShift: employee.additionalShifts?.[dateKey] ?? null,
     };
   });
   const activeEmployees = dailyEmployees.filter(
@@ -309,7 +309,7 @@ export function getWeeklyStaffing(
   date: Date,
   employees: readonly Employee[],
   absences: readonly AbsenceEntry[],
-  areaConfiguration: AreaConfiguration = sampleAreaConfiguration,
+  areaConfiguration: AreaConfiguration = { areas: [], minimums: {} },
   assignments: readonly TemporaryAssignment[] = [],
 ): WeeklyStaffing {
   const monday = startOfWeek(date);

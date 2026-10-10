@@ -4,10 +4,17 @@ import { redirect } from "next/navigation";
 import NotificationBell from "@/app/components/notification-bell";
 import { getAuthorizationContext } from "@/lib/authorization";
 import { loadRecordingOverview } from "@/lib/performance";
-import { canRecordPerformance, canViewPerformance, formatDuration } from "@/lib/performance-rules";
+import {
+  canRecordPerformance,
+  canViewPerformance,
+  performanceVisibility,
+  formatDuration,
+  summarizeRows,
+} from "@/lib/performance-rules";
 import { dateKeyToUtc } from "@/lib/calendar";
 import PerformanceForm from "./performance-form";
 import DeleteEntryButton from "./delete-entry-button";
+import AchievementBadge from "./achievement-badge";
 
 export const metadata: Metadata = { title: "Leistung erfassen | Mitarbeiter-App" };
 
@@ -17,15 +24,16 @@ const longDate = new Intl.DateTimeFormat("de-DE", {
 });
 const timeFormat = new Intl.DateTimeFormat("de-DE", { timeStyle: "short", timeZone: "Europe/Berlin" });
 const numberFormat = new Intl.NumberFormat("de-DE");
+const rateFormat = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default async function PerformancePage() {
   const context = await getAuthorizationContext();
   if (!context) redirect("/login");
   if (!canRecordPerformance(context)) redirect("/dashboard");
+  const showDetails = canViewPerformance(context);
   const overview = await loadRecordingOverview(context);
   const { resolved, entries } = overview;
-  const totalQuantity = entries.reduce((sum, entry) => sum + entry.quantity, 0);
-  const totalMinutes = entries.reduce((sum, entry) => sum + entry.durationMinutes, 0);
+  const total = summarizeRows(entries);
 
   return (
     <main className="min-h-screen bg-[#f4f6f2] text-[#1c2b23]">
@@ -36,6 +44,9 @@ export default async function PerformancePage() {
             <span className="hidden text-sm font-semibold sm:inline">MITARBEITERPORTAL</span>
           </Link>
           <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Hauptnavigation">
+            {performanceVisibility(context).performanceTargets && (
+              <Link href="/admin/leistung/arbeitsplaetze" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Sollwerte</Link>
+            )}
             <Link href="/dashboard" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Dashboard</Link>
             {canViewPerformance(context) && (
               <Link href="/admin/leistung" className="rounded-lg px-2 py-2 text-sm font-medium text-[#41634f] hover:bg-[#edf3ee]">Auswertung</Link>
@@ -45,7 +56,7 @@ export default async function PerformancePage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-5xl gap-6 px-4 pb-14 pt-8 sm:px-8 sm:pt-12 lg:grid-cols-[1.1fr_1fr]">
+      <div className={`mx-auto grid gap-6 px-4 pb-14 pt-8 sm:px-8 sm:pt-12 ${showDetails ? "max-w-5xl lg:grid-cols-[1.1fr_1fr]" : "max-w-2xl"}`}>
         <section aria-labelledby="leistung-titel"
           className="rounded-xl border border-[#e0e7e0] bg-white p-5 shadow-[0_8px_30px_rgba(28,43,35,0.05)] sm:p-6">
           <p className="text-xs font-semibold tracking-[0.15em] text-[#668071]">LEISTUNG</p>
@@ -69,7 +80,7 @@ export default async function PerformancePage() {
 
           <div className="mt-6">
             {resolved.ok ? (
-              <PerformanceForm />
+              <PerformanceForm workstations={showDetails ? overview.workstations : undefined} />
             ) : (
               <p role="status" className="rounded-lg border border-[#ecd9a8] bg-[#fff8e6] px-4 py-3 text-sm text-[#7a5a12]">
                 {resolved.reason}
@@ -78,17 +89,22 @@ export default async function PerformancePage() {
           </div>
         </section>
 
-        <section aria-labelledby="erfasst-titel"
+        {showDetails && <section aria-labelledby="erfasst-titel"
           className="h-fit rounded-xl border border-[#e0e7e0] bg-white p-5 shadow-[0_8px_30px_rgba(28,43,35,0.05)] sm:p-6">
           <h2 id="erfasst-titel" className="text-lg font-semibold">In dieser Schicht erfasst</h2>
           {entries.length === 0 ? (
             <p className="mt-3 text-sm text-[#5e7366]">Noch keine Leistung erfasst.</p>
           ) : (
             <>
-              <p className="mt-1 text-sm text-[#5e7366]">
-                Summe Menge <strong className="text-[#1c2b23]">{numberFormat.format(totalQuantity)}</strong> ·
-                Arbeitszeit <strong className="text-[#1c2b23]">{formatDuration(totalMinutes)}</strong>
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-[#f4f6f2] px-3 py-2.5 text-sm text-[#5e7366]">
+                <span>Ist <strong className="text-[#1c2b23]">{numberFormat.format(total.quantity)}</strong>
+                  {total.expectedQuantity > 0 && <> / Soll <strong className="text-[#1c2b23]">{numberFormat.format(total.expectedQuantity)}</strong></>} Stück</span>
+                <span>Arbeitszeit <strong className="text-[#1c2b23]">{formatDuration(total.durationMinutes)}</strong></span>
+                <span className="flex items-center gap-1.5">Leistungsgrad <AchievementBadge percent={total.achievement} /></span>
+              </div>
+              {entries.some((entry) => entry.targetPerHour === null) && (
+                <p className="mt-2 text-xs text-[#5e7366]">Der zusammengefasste Leistungsgrad berücksichtigt nur Einträge mit Sollwert.</p>
+              )}
               <ul className="mt-4 divide-y divide-[#e7ede7]">
                 {entries.map((entry) => (
                   <li key={entry.id} className="flex items-start justify-between gap-3 py-3">
@@ -97,7 +113,14 @@ export default async function PerformancePage() {
                         {entry.workstation} <span className="font-normal text-[#5e7366]">· {entry.areaLabel}</span>
                       </p>
                       <p className="text-sm">
-                        Menge {numberFormat.format(entry.quantity)} · {formatDuration(entry.durationMinutes)}
+                        {numberFormat.format(entry.quantity)} Stück · {formatDuration(entry.durationMinutes)}
+                      </p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-[#5e7366]">
+                        <span>
+                          Ist {rateFormat.format(entry.perHour)} Stück/Std. · Soll {entry.targetPerHour === null
+                            ? "nicht hinterlegt" : `${numberFormat.format(entry.targetPerHour)} Stück/Std.`}
+                        </span>
+                        <span>Leistungsgrad <AchievementBadge percent={entry.achievement} /></span>
                       </p>
                       {entry.note && <p className="mt-1 break-words text-sm text-[#5e7366]">{entry.note}</p>}
                       <p className="mt-1 text-xs text-[#87928b]">erfasst um {timeFormat.format(new Date(entry.createdAt))} Uhr</p>
@@ -108,7 +131,7 @@ export default async function PerformancePage() {
               </ul>
             </>
           )}
-        </section>
+        </section>}
       </div>
     </main>
   );
