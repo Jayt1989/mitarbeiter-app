@@ -12,6 +12,6 @@ export default async function AdminVacationPage({ searchParams }: {
 }) {
   const context = await requirePageAccess("/admin/urlaub");
   const { request } = await searchParams;
-  return <VacationManagement access={{ employeeId: context.employeeId, permissions: context.permissions }}
+  return <VacationManagement access={{ employeeId: context.employeeId, role: context.role, permissions: context.permissions }}
     requestId={request} />;
 }

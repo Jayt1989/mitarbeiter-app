@@ -5,7 +5,7 @@ export const employeeOverviewScopes = ["vacation", "qualifications", "assignment
 export type EmployeeOverviewScope = (typeof employeeOverviewScopes)[number];
 
 const scopePermissions: Record<EmployeeOverviewScope, readonly string[]> = {
-  vacation: ["otherVacations", "approveVacation"],
+  vacation: ["otherVacations", "approveVacation", "manageTfDayEntitlements"],
   qualifications: ["viewQualifications", "editQualifications", "manageQualifications"],
   assignments: ["editAssignments"],
   export: ["viewReports", "exportReports"],

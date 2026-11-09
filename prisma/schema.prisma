@@ -21,6 +21,11 @@ enum VacationStatus {
   CANCELLED
 }
 
+enum VacationRequestType {
+  VACATION
+  TF_DAY
+}
+
 enum AbsenceType {
   SICK
   TRAINING
@@ -44,6 +49,9 @@ enum NotificationType {
   VACATION_REQUESTED
   VACATION_APPROVED
   VACATION_REJECTED
+  TF_DAY_REQUESTED
+  TF_DAY_APPROVED
+  TF_DAY_REJECTED
   SHIFT_CHANGED
   ASSIGNMENT_CREATED
   ASSIGNMENT_UPDATED
@@ -366,6 +374,7 @@ model Employee {
   absences             Absence[]
   vacationRequests     VacationRequest[]
   vacationAccounts     VacationAccount[]
+  tfDayAccounts        TfDayAccount[]
   qualifications       EmployeeQualification[]
   temporaryAssignments TemporaryAssignment[]
   notifications        Notification[]
@@ -529,22 +538,24 @@ model Absence {
 }
 
 model VacationRequest {
-  id            String         @id @default(cuid())
+  id            String              @id @default(cuid())
   employeeId    String
-  startDate     DateTime       @db.Date
-  endDate       DateTime       @db.Date
+  requestType   VacationRequestType @default(VACATION)
+  startDate     DateTime            @db.Date
+  endDate       DateTime            @db.Date
   daysRequested Int
-  status        VacationStatus @default(REQUESTED)
+  status        VacationStatus      @default(REQUESTED)
   comment       String?
-  requestedAt   DateTime       @default(now())
+  requestedAt   DateTime            @default(now())
   decidedAt     DateTime?
   approvedById  String?
-  updatedAt     DateTime       @updatedAt
+  updatedAt     DateTime            @updatedAt
 
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   approvedBy User?    @relation("VacationApprover", fields: [approvedById], references: [id], onDelete: SetNull)
 
   @@index([employeeId, status, startDate, endDate])
+  @@index([employeeId, requestType, status, startDate, endDate], map: "VacationRequest_employee_type_status_period_idx")
   @@index([status, startDate])
 }
 
@@ -560,6 +571,20 @@ model VacationAccount {
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, year])
+}
+
+model TfDayAccount {
+  id          String   @id @default(cuid())
+  employeeId  String
+  year        Int
+  entitlement Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year])
+  @@index([year])
 }
 
 model MinimumStaffing {

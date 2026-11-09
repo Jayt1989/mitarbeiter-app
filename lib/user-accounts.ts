@@ -115,7 +115,12 @@ export async function writeEmployeeCore(db: Db, employee: Employee) {
 
   for (const permission of permissionOptions) {
     const dbPermission = await db.permission.findUnique({ where: { key: permission.id } });
-    if (!dbPermission) continue;
+    if (!dbPermission) {
+      throw new AccountError(
+        `Die Berechtigung "${permission.id}" ist nicht in der Datenbank eingerichtet. Bitte zuerst die Permission-Migration oder den Permission-Sync ausführen.`,
+        500,
+      );
+    }
     const allowed = employee.permissions?.[permission.id] === true;
     await db.employeePermission.upsert({
       where: { employeeId_permissionId: { employeeId: record.id, permissionId: dbPermission.id } },

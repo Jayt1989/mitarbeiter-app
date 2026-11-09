@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   assignmentNotification, notificationDate, qualificationNotification,
   shiftNotification, swapApprovalNotification,
-  vacationNotification, vacationRequestNotification,
+  tfDayRequestNotification, vacationNotification, vacationRequestNotification,
 } from "./notification-messages";
 
 const period = {
@@ -48,6 +48,23 @@ test("vacation rejection matches the required message", () => {
   const notification = vacationNotification(period, "REJECTED");
   assert.equal(notification.message, "Dein Urlaubsantrag vom 12.10.2026 bis 16.10.2026 wurde abgelehnt.");
   assert.equal(notification.type, "VACATION_REJECTED");
+});
+
+test("TF request and decisions use their distinct notification type and wording", () => {
+  assert.deepEqual(tfDayRequestNotification("reviewer-1", "Max Mustermann", {
+    ...period, id: "tf-request-1",
+  }), {
+    userId: "reviewer-1",
+    title: "Neuer TF-Antrag",
+    message: "Neuer TF-Antrag von Max Mustermann für 12.10.2026 bis 16.10.2026.",
+    type: "TF_DAY_REQUESTED",
+    link: "/admin/urlaub?request=tf-request-1",
+  });
+  assert.equal(vacationNotification({ ...period, requestType: "TF_DAY" }, "APPROVED").type, "TF_DAY_APPROVED");
+  assert.equal(
+    vacationNotification({ ...period, requestType: "TF_DAY" }, "REJECTED").message,
+    "Dein TF-Antrag vom 12.10.2026 bis 16.10.2026 wurde abgelehnt.",
+  );
 });
 
 test("shift change includes date, old and new shift", () => {

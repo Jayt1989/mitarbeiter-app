@@ -18,6 +18,7 @@ import {
   companyDayMarkerStyle,
   holidayMarkerStyle,
   shiftStyles,
+  tfDayStyles,
   vacationStyles,
 } from "./shift-styles";
 import YearSelector from "../components/year-selector";
@@ -353,18 +354,22 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                           : null;
                       const additionalOnDay = selectedEmployee.additionalShifts?.[dateKey];
                       const shiftClass = vacationOnDay
-                        ? vacationStyles[vacationOnDay.status as Exclude<VacationStatus, "Storniert">]
+                        ? vacationOnDay.requestType === "TF_DAY"
+                          ? tfDayStyles[vacationOnDay.status as Exclude<VacationStatus, "Storniert">]
+                          : vacationStyles[vacationOnDay.status as Exclude<VacationStatus, "Storniert">]
                         : absenceOnDay
                           ? absenceStyles[absenceOnDay]
                         : shift
                           ? shiftStyles[shift]
                           : "border border-dashed border-[#d7dfd8] bg-white text-[#87928b]";
                       const shiftLabel = vacationOnDay
-                        ? vacationOnDay.status === "Genehmigt"
-                          ? "Urlaub"
-                          : vacationOnDay.status === "Beantragt"
-                            ? "Antrag"
-                            : "Abgelehnt"
+                        ? vacationOnDay.requestType === "TF_DAY"
+                          ? vacationOnDay.status === "Genehmigt" ? "TF" : vacationOnDay.status === "Beantragt" ? "TF-Antrag" : "TF abgelehnt"
+                          : vacationOnDay.status === "Genehmigt"
+                            ? "Urlaub"
+                            : vacationOnDay.status === "Beantragt"
+                              ? "Antrag"
+                              : "Abgelehnt"
                         : absenceOnDay
                           ? absenceOnDay === "Sonderurlaub"
                             ? "Sonderur."
@@ -372,7 +377,7 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                               ? "Abwesenh."
                               : absenceOnDay
                         : shift ?? "–";
-                      const accessibleLabel = `${day}. ${month.name} ${year}: ${vacationOnDay ? `Urlaub ${vacationOnDay.status.toLocaleLowerCase("de")}` : absenceOnDay ?? shiftLabel}${shift && shift !== "Frei" ? `, Schicht laut Plan ${shift}` : ""}${additionalOnDay ? `, Zusatzschicht: ${additionalOnDay.departmentName}, ${shiftTimeLabel(additionalOnDay.shift)}` : ""}${assignmentOnDay ? `, Einsatz: ${assignmentOnDay.areaName}` : ""}${marks.holiday ? `, Feiertag: ${marks.holiday.name}` : ""}${marks.companyDays.map((entry) => `, Sondertag: ${entry.name}`).join("")}`;
+                      const accessibleLabel = `${day}. ${month.name} ${year}: ${vacationOnDay ? `${vacationOnDay.requestType === "TF_DAY" ? "Tariflicher Tag" : "Urlaub"} ${vacationOnDay.status.toLocaleLowerCase("de")}` : absenceOnDay ?? shiftLabel}${shift && shift !== "Frei" ? `, Schicht laut Plan ${shift}` : ""}${additionalOnDay ? `, Zusatzschicht: ${additionalOnDay.departmentName}, ${shiftTimeLabel(additionalOnDay.shift)}` : ""}${assignmentOnDay ? `, Einsatz: ${assignmentOnDay.areaName}` : ""}${marks.holiday ? `, Feiertag: ${marks.holiday.name}` : ""}${marks.companyDays.map((entry) => `, Sondertag: ${entry.name}`).join("")}`;
                       const cellContent = (
                         <>
                           <span className="text-[10px] font-semibold leading-3 tabular-nums">
@@ -416,7 +421,7 @@ export default function ShiftCalendar({ initialData, ownEmployeeId, canSwap, can
                           type="button"
                           role="gridcell"
                           aria-label={`${accessibleLabel}. Details öffnen`}
-                          title="Urlaubsdetails öffnen"
+                          title={vacationOnDay.requestType === "TF_DAY" ? "TF-Tagesdetails öffnen" : "Urlaubsdetails öffnen"}
                           data-plan-shift={shift ?? ""}
                           onClick={() => setSelectedVacation(vacationOnDay)}
                           className={`${cellClass} w-full text-left focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#174c37]`}
@@ -504,10 +509,12 @@ function VacationDayDialog({
         <div className="flex items-start justify-between gap-4 border-b border-[#e8ede8] px-5 py-4 sm:px-6">
           <div>
             <p className="text-[10px] font-semibold tracking-[0.14em] text-[#668071]">
-              URLAUBSANTRAG
+              {request.requestType === "TF_DAY" ? "TARIFLICHER TAG" : "URLAUBSANTRAG"}
             </p>
             <h2 id="vacation-day-title" className="mt-1 text-xl font-semibold">
-              {request.status === "Genehmigt" ? "Urlaub genehmigt" : request.status === "Beantragt" ? "Urlaub beantragt" : "Urlaub abgelehnt"}
+              {request.requestType === "TF_DAY"
+                ? `TF-Tag ${request.status === "Genehmigt" ? "genehmigt" : request.status === "Beantragt" ? "beantragt" : "abgelehnt"}`
+                : request.status === "Genehmigt" ? "Urlaub genehmigt" : request.status === "Beantragt" ? "Urlaub beantragt" : "Urlaub abgelehnt"}
             </h2>
           </div>
           <button
@@ -524,7 +531,7 @@ function VacationDayDialog({
         <div className="grid grid-cols-2 gap-x-4 gap-y-5 px-5 py-5 sm:px-6">
           <EmployeeDetail label="Von" value={formatDate(request.startDate)} />
           <EmployeeDetail label="Bis" value={formatDate(request.endDate)} />
-          <EmployeeDetail label="Anzahl Urlaubstage" value={`${request.daysRequested}`} />
+          <EmployeeDetail label={request.requestType === "TF_DAY" ? "Anzahl TF-Tage" : "Anzahl Urlaubstage"} value={`${request.daysRequested}`} />
           <EmployeeDetail label="Status" value={request.status} />
           <EmployeeDetail label="Beantragt am" value={formatDate(request.requestedAt.slice(0, 10))} />
           <div className="col-span-2">

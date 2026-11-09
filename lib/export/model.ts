@@ -16,6 +16,7 @@ export const cellKinds = [
   "Nacht",
   "Frei",
   "Urlaub",
+  "TF-Tag",
   "Krank",
   "Schulung",
   "Sonderurlaub",
@@ -32,6 +33,7 @@ export const cellColors: Record<CellKind, { bg: string; fg: string }> = {
   Nacht: { bg: "#29395f", fg: "#ffffff" },
   Frei: { bg: "#ecefeb", fg: "#526056" },
   Urlaub: { bg: "#ccebd2", fg: "#174c2e" },
+  "TF-Tag": { bg: "#eee5f5", fg: "#603d7a" },
   Krank: { bg: "#fce4e2", fg: "#9b342b" },
   Schulung: { bg: "#d9f2ef", fg: "#146b66" },
   Sonderurlaub: { bg: "#f8e3ed", fg: "#91405e" },
@@ -46,6 +48,7 @@ export const cellShortLabels: Record<CellKind, string> = {
   Nacht: "N",
   Frei: "fr",
   Urlaub: "U",
+  "TF-Tag": "TF",
   Krank: "K",
   Schulung: "Sch",
   Sonderurlaub: "SU",
@@ -140,8 +143,11 @@ export function createDayResolver(source: ExportSource) {
     const plan = plans.get(employee.id) ?? toEmployeeShiftPlan(employee);
     const shift = getShiftForDate(new Date(`${dateKey}T00:00:00.000Z`), plan);
     // Urlaub und Abwesenheiten haben Vorrang; ein Feiertag ändert die Schicht nicht.
-    if (vacations.get(employee.id)?.some((entry) => covers(entry, dateKey))) {
-      return { ...base, kind: "Urlaub", label: "Urlaub", shift };
+    const vacation = vacations.get(employee.id)?.find((entry) => covers(entry, dateKey));
+    if (vacation) {
+      return vacation.requestType === "TF_DAY"
+        ? { ...base, kind: "TF-Tag", label: "TF", shift }
+        : { ...base, kind: "Urlaub", label: "Urlaub", shift };
     }
     const absence = absences.get(employee.id)?.find((entry) => covers(entry, dateKey));
     if (absence) return { ...base, kind: absence.kind, label: absence.kind, shift };
@@ -243,6 +249,7 @@ export type StaffingRow = {
   planned: number;
   available: number;
   vacation: number;
+  tfDays: number;
   sick: number;
   early: number;
   late: number;
@@ -270,7 +277,7 @@ function toStaffingAbsences(source: ExportSource): AbsenceEntry[] {
         employeeId: entry.employeeId,
         startDate: entry.startDate,
         endDate: entry.endDate,
-        type: "Urlaub",
+        type: entry.requestType === "TF_DAY" ? "TF-Tag" : "Urlaub",
         approval: "Genehmigt",
       })),
     ...source.absences.filter((entry) => entry.status !== "Beantragt").map(fromAbsence),
@@ -308,6 +315,7 @@ export function buildStaffingRows(source: ExportSource, dates: string[], areaId:
         planned: sum((entry) => entry.planned),
         available: sum((entry) => entry.available),
         vacation: inArea.filter((entry) => entry.absenceType === "Urlaub").length,
+        tfDays: inArea.filter((entry) => entry.absenceType === "TF-Tag").length,
         sick: inArea.filter((entry) => entry.absenceType === "Krank").length,
         early: perShift[0]?.available ?? 0,
         late: perShift[1]?.available ?? 0,
@@ -422,14 +430,30 @@ export type VacationExport = {
     remaining: number;
   }[];
   periods: { name: string; personnelNumber: string; startDate: string; endDate: string; days: number; status: string }[];
+  tfDayRows: {
+    name: string;
+    personnelNumber: string;
+    entitlement: number;
+    approved: number;
+    requested: number;
+    remaining: number;
+  }[];
+  tfDayPeriods: { name: string; personnelNumber: string; startDate: string; endDate: string; days: number; status: string }[];
 };
 
-export function buildVacationExport(source: ExportSource, year: number, accounts: VacationAccountInput[]): VacationExport {
+export type TfDayAccountInput = { employeeId: string; entitlement: number };
+
+export function buildVacationExport(
+  source: ExportSource,
+  year: number,
+  accounts: VacationAccountInput[],
+  tfDayAccounts: TfDayAccountInput[] = [],
+): VacationExport {
   const state = source.calendar.state;
   const employees = new Map(source.employees.map((employee) => [employee.id, employee]));
   const rows = source.employees.map((employee) => {
     const account = accounts.find((entry) => entry.employeeId === employee.id);
-    const own = source.vacations.filter((entry) => entry.employeeId === employee.id);
+    const own = source.vacations.filter((entry) => entry.employeeId === employee.id && entry.requestType === "VACATION");
     const days = (status: string) =>
       own.filter((entry) => entry.status === status).reduce((sum, entry) => sum + countVacationDaysInYear(employee, entry, year, state), 0);
     const annualAllowance = account?.annualAllowance ?? employee.annualLeaveAllowance;
@@ -451,7 +475,37 @@ export function buildVacationExport(source: ExportSource, year: number, accounts
   return {
     year,
     rows,
-    periods: source.vacations.flatMap((entry) => {
+    periods: source.vacations.filter((entry) => entry.requestType === "VACATION").flatMap((entry) => {
+      const employee = employees.get(entry.employeeId);
+      if (!employee) return [];
+      return [{
+        name: employeeName(employee),
+        personnelNumber: employee.personnelNumber,
+        startDate: entry.startDate,
+        endDate: entry.endDate,
+        days: countVacationDaysInYear(employee, entry, year, state),
+        status: entry.status,
+      }];
+    }),
+    tfDayRows: source.employees.map((employee) => {
+      const account = tfDayAccounts.find((entry) => entry.employeeId === employee.id);
+      const own = source.vacations.filter((entry) => entry.employeeId === employee.id && entry.requestType === "TF_DAY");
+      const days = (status: string) => own
+        .filter((entry) => entry.status === status)
+        .reduce((sum, entry) => sum + countVacationDaysInYear(employee, entry, year, state), 0);
+      const entitlement = account?.entitlement ?? 0;
+      const approved = days("Genehmigt");
+      const requested = days("Beantragt");
+      return {
+        name: employeeName(employee),
+        personnelNumber: employee.personnelNumber,
+        entitlement,
+        approved,
+        requested,
+        remaining: entitlement - approved - requested,
+      };
+    }),
+    tfDayPeriods: source.vacations.filter((entry) => entry.requestType === "TF_DAY").flatMap((entry) => {
       const employee = employees.get(entry.employeeId);
       if (!employee) return [];
       return [{

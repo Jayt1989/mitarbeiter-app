@@ -280,6 +280,7 @@ async function main() {
         Schulung: AbsenceType.TRAINING,
         Sonderurlaub: AbsenceType.SPECIAL_LEAVE,
         "Sonstige Abwesenheit": AbsenceType.OTHER,
+        "TF-Tag": AbsenceType.OTHER,
         Urlaub: AbsenceType.OTHER,
       }[absence.type],
       status: absence.approval === "Genehmigt" ? AbsenceStatus.APPROVED : AbsenceStatus.RECORDED,

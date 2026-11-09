@@ -18,6 +18,7 @@ import {
 } from "./staffing";
 import YearSelector from "../components/year-selector";
 import { calendarRepository } from "./calendar-repository";
+import { absenceStyles } from "../schichtplan/shift-styles";
 import {
   berlinTodayKey,
   defaultCalendarData,
@@ -250,7 +251,7 @@ export default function WeekPlan() {
           ))}
 
           <p className="mt-4 text-[10px] text-[#77847b] print:text-[8px]">
-            F = Früh · S = Spät · N = Nacht · „Einsatz“ = temporär aus anderem Bereich · „→ Bereich“ = an diesem Tag in anderem Bereich eingesetzt · Rot = gesetzlicher Feiertag ({calendar.state}, Schicht bleibt bestehen) · Violett = betrieblicher Sondertag
+            F = Früh · S = Spät · N = Nacht · TF = tariflicher Tag · „Einsatz“ = temporär aus anderem Bereich · „→ Bereich“ = an diesem Tag in anderem Bereich eingesetzt · Rot = gesetzlicher Feiertag ({calendar.state}, Schicht bleibt bestehen) · Violett = betrieblicher Sondertag
           </p>
         </section>
       </div>
@@ -270,7 +271,9 @@ function PlanCell({ day, areaId }: { day: EmployeeDay; areaId: string | null }) 
     );
   }
   if (day.absenceType) {
-    return <td className={`${base} bg-[#fde9e7] font-semibold text-[#a33e31]`}>{day.absenceType}</td>;
+    return <td className={`${base} font-semibold ${absenceStyles[day.absenceType]}`}>
+      {day.absenceType === "TF-Tag" ? "TF" : day.absenceType}
+    </td>;
   }
   if (day.shift === null || day.shift === "Frei") {
     return <td className={`${base} text-[#8a958d]`}>{day.shift ?? "–"}</td>;

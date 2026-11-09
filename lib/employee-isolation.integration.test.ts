@@ -114,26 +114,44 @@ test("HTTP-Benutzertrennung: Mitarbeiter A/B, fremde IDs, Server Actions und akt
     });
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
+    const serverEnv = {
+      ...process.env,
+      DATABASE_URL: url.toString(),
+      AUTH_SECRET: randomBytes(32).toString("hex"),
+      AUTH_URL: base,
+      AUTH_TRUST_HOST: "true",
+      PORT: String(port),
+    };
     let serverOutput = "";
-    server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"], {
-      env: { ...process.env, DATABASE_URL: url.toString(), AUTH_SECRET: randomBytes(32).toString("hex"),
-        AUTH_URL: base, AUTH_TRUST_HOST: "true", PORT: String(port) },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    server.stdout?.on("data", (chunk) => { serverOutput = `${serverOutput}${chunk}`.slice(-4000); });
-    server.stderr?.on("data", (chunk) => { serverOutput = `${serverOutput}${chunk}`.slice(-4000); });
-    let ready = false;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (server.exitCode !== null) throw new Error(`Testserver beendet: ${serverOutput}`);
-      try {
-        ready = (await fetch(`${base}/api/auth/csrf`)).ok;
-      } catch (error) {
-        if (!(error instanceof TypeError)) throw error;
+    async function startServer() {
+      serverOutput = "";
+      server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"], {
+        env: serverEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      server.stdout?.on("data", (chunk) => { serverOutput = `${serverOutput}${chunk}`.slice(-4000); });
+      server.stderr?.on("data", (chunk) => { serverOutput = `${serverOutput}${chunk}`.slice(-4000); });
+      let ready = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (server.exitCode !== null) throw new Error(`Testserver beendet: ${serverOutput}`);
+        try {
+          ready = (await fetch(`${base}/api/auth/csrf`)).ok;
+        } catch (error) {
+          if (!(error instanceof TypeError)) throw error;
+        }
+        if (ready) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      if (ready) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.ok(ready, "Testserver ist nicht erreichbar.");
     }
-    assert.ok(ready, "Testserver ist nicht erreichbar.");
+    async function stopServer() {
+      if (!server || server.exitCode !== null) return;
+      const stopping = server;
+      stopping.kill("SIGTERM");
+      await once(stopping, "exit");
+      server = undefined;
+    }
+    await startServer();
 
     type Session = { cookie: string };
     async function login(loginName: string): Promise<Session> {
@@ -156,6 +174,172 @@ test("HTTP-Benutzertrennung: Mitarbeiter A/B, fremde IDs, Server Actions und akt
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     }
+
+    await t.test("TF-Tage-Anspruchsrecht wird über die Mitarbeiterverwaltung aktiviert und entzogen", async () => {
+      const editPermission = await database.permission.findUniqueOrThrow({ where: { key: "editEmployees" } });
+      const tfPermission = await database.permission.findUniqueOrThrow({ where: { key: "manageTfDayEntitlements" } });
+      await database.rolePermission.update({
+        where: { roleId_permissionId: { roleId: admin.user.roleId, permissionId: editPermission.id } },
+        data: { allowed: true },
+      });
+      try {
+        const response = await request(sessions[2], "/api/employees");
+        assert.equal(response.status, 200);
+        const employees = await response.json() as { id: string; permissions: Record<string, boolean> }[];
+        let target = employees.find((employee) => employee.id === a.employee.id);
+        assert.ok(target);
+
+        for (const allowed of [false, true, false]) {
+          const saved = await request(sessions[2], "/api/employees", "PUT", [{
+            ...target,
+            permissions: { ...target.permissions, manageTfDayEntitlements: allowed },
+          }]);
+          assert.equal(saved.status, 200);
+          const savedEmployees = await saved.json() as typeof employees;
+          target = savedEmployees.find((employee) => employee.id === a.employee.id);
+          assert.ok(target);
+          assert.equal(target.permissions.manageTfDayEntitlements, allowed);
+
+          const override = await database.employeePermission.findUniqueOrThrow({
+            where: { employeeId_permissionId: { employeeId: a.employee.id, permissionId: tfPermission.id } },
+          });
+          assert.equal(override.allowed, allowed);
+
+          const reloadedResponse = await request(sessions[2], "/api/employees");
+          assert.equal(reloadedResponse.status, 200);
+          const reloaded = await reloadedResponse.json() as typeof employees;
+          assert.equal(
+            reloaded.find((employee) => employee.id === a.employee.id)?.permissions.manageTfDayEntitlements,
+            allowed,
+          );
+        }
+      } finally {
+        await database.employeePermission.deleteMany({ where: { employeeId: a.employee.id } });
+        await database.rolePermission.update({
+          where: { roleId_permissionId: { roleId: admin.user.roleId, permissionId: editPermission.id } },
+          data: { allowed: false },
+        });
+      }
+    });
+
+    await t.test("TF-Tage-Anspruch wird angelegt, aktualisiert und nach erneutem Laden angezeigt", async () => {
+      const year = Number(today.slice(0, 4));
+      const permission = await database.permission.findUniqueOrThrow({ where: { key: "manageTfDayEntitlements" } });
+      await database.rolePermission.update({
+        where: { roleId_permissionId: { roleId: admin.user.roleId, permissionId: permission.id } },
+        data: { allowed: true },
+      });
+      try {
+        for (const entitlement of [5, 8]) {
+          const saved = await request(sessions[2], "/api/tf-day-accounts", "POST", {
+            employeeId: a.employee.id,
+            year,
+            entitlement,
+          });
+          assert.equal(saved.status, 200);
+          const body = await saved.json() as { employeeId: string; year: number; hasAccount: boolean; entitlement: number };
+          assert.deepEqual(body, {
+            employeeId: a.employee.id, year, hasAccount: true, entitlement,
+            approvedDays: 0, pendingDays: 0, remainingDays: entitlement,
+          });
+        }
+
+        const stored = await database.tfDayAccount.findUniqueOrThrow({
+          where: { employeeId_year: { employeeId: a.employee.id, year } },
+        });
+        assert.equal(stored.entitlement, 8);
+        assert.equal(await database.tfDayAccount.count({ where: { employeeId: a.employee.id, year } }), 1);
+
+        await stopServer();
+        await startServer();
+        const restartedEmployeeSession = await login(a.user.login);
+        const refreshed = await request(restartedEmployeeSession, `/api/tf-day-accounts?year=${year}`);
+        assert.equal(refreshed.status, 200);
+        const accounts = await refreshed.json() as { employeeId: string; hasAccount: boolean; entitlement: number }[];
+        assert.deepEqual(accounts.find((account) => account.employeeId === a.employee.id), {
+          employeeId: a.employee.id, year, hasAccount: true, entitlement: 8,
+          approvedDays: 0, pendingDays: 0, remainingDays: 8,
+        });
+
+        const employeePermissions = await database.permission.findMany();
+        await database.employeePermission.createMany({
+          data: employeePermissions.map((entry) => ({
+            employeeId: a.employee.id,
+            permissionId: entry.id,
+            allowed: entry.key === "requestVacation",
+          })),
+        });
+        try {
+          const dashboard = await request(restartedEmployeeSession, "/dashboard");
+          assert.equal(dashboard.status, 200);
+          const html = await dashboard.text();
+          assert.match(html, /TF-Tage 2026/);
+          assert.match(html, /8 Tage/);
+          assert.match(html, /TF-Tag beantragen/);
+          const tfRequests = await request(restartedEmployeeSession, "/api/vacation-requests");
+          assert.equal(tfRequests.status, 200);
+          assert.deepEqual(await tfRequests.json(), []);
+        } finally {
+          await database.employeePermission.deleteMany({ where: { employeeId: a.employee.id } });
+        }
+
+        const approvePermission = await database.permission.findUniqueOrThrow({ where: { key: "approveVacation" } });
+        await database.rolePermission.update({
+          where: { roleId_permissionId: { roleId: admin.user.roleId, permissionId: approvePermission.id } },
+          data: { allowed: true },
+        });
+        try {
+          const requested = await request(restartedEmployeeSession, "/api/vacation-requests", "POST", {
+            startDate: "2026-10-19",
+            endDate: "2026-10-19",
+            requestType: "TF_DAY",
+            comment: "Integration test",
+          });
+          assert.equal(requested.status, 201);
+          const requestedBody = await requested.json() as { id: string; requestType: string; status: string };
+          assert.equal(requestedBody.requestType, "TF_DAY");
+          assert.equal(requestedBody.status, "Beantragt");
+          const ownRequests = await request(restartedEmployeeSession, "/api/vacation-requests");
+          assert.equal(ownRequests.status, 200);
+          const ownRequestRows = await ownRequests.json() as { id: string; requestType: string }[];
+          assert.ok(ownRequestRows.some((entry) =>
+            entry.id === requestedBody.id && entry.requestType === "TF_DAY",
+          ));
+
+          const approved = await request(sessions[2], "/api/vacation-requests", "PATCH", {
+            id: requestedBody.id,
+            status: "Genehmigt",
+          });
+          assert.equal(approved.status, 200);
+          assert.equal((await approved.json() as { status: string }).status, "Genehmigt");
+
+          const planResponse = await request(restartedEmployeeSession, "/api/shift-plan");
+          assert.equal(planResponse.status, 200);
+          const plan = await planResponse.json() as {
+            vacations: { id: string; requestType: string; status: string }[];
+          };
+          assert.ok(plan.vacations.some((entry) =>
+            entry.id === requestedBody.id && entry.requestType === "TF_DAY" && entry.status === "Genehmigt",
+          ));
+
+          const plannerPage = await request(restartedEmployeeSession, "/schichtplan");
+          assert.equal(plannerPage.status, 200);
+          const plannerHtml = await plannerPage.text();
+          assert.match(plannerHtml, /TF/);
+          assert.match(plannerHtml, /#eee5f5|#9272b6/);
+        } finally {
+          await database.rolePermission.update({
+            where: { roleId_permissionId: { roleId: admin.user.roleId, permissionId: approvePermission.id } },
+            data: { allowed: false },
+          });
+        }
+      } finally {
+        await database.rolePermission.update({
+          where: { roleId_permissionId: { roleId: admin.user.roleId, permissionId: permission.id } },
+          data: { allowed: false },
+        });
+      }
+    });
 
     await t.test("Startseite und URLs: Mitarbeiter mit wenigen Rechten, Vorarbeiter mit Teilrechten und eingeschränkter Admin", async () => {
       const employeePermissions = await database.permission.findMany();

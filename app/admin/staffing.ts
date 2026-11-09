@@ -88,7 +88,7 @@ export function getStaffingAbsences(
         employeeId: request.employeeId,
         startDate: request.startDate,
         endDate: request.endDate,
-        type: "Urlaub" as const,
+        type: request.requestType === "TF_DAY" ? "TF-Tag" as const : "Urlaub" as const,
         approval: "Genehmigt" as const,
       })),
   ];

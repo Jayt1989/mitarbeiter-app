@@ -88,6 +88,24 @@ async function validateInput(body: unknown, ignoreId?: string): Promise<Validati
   if (employee.departments[0]?.departmentId === department.id) {
     return { ok: false, error: "Der Einsatzbereich entspricht dem Hauptbereich des Mitarbeiters.", status: 400 };
   }
+  const overlappingTimeOff = await prisma.vacationRequest.findFirst({
+    where: {
+      employeeId: employee.id,
+      status: { in: ["REQUESTED", "APPROVED"] },
+      startDate: { lte: toDate(raw.endDate) },
+      endDate: { gte: toDate(raw.startDate) },
+    },
+    select: { requestType: true },
+  });
+  if (overlappingTimeOff) {
+    return {
+      ok: false,
+      error: overlappingTimeOff.requestType === "TF_DAY"
+        ? "Der Einsatz kollidiert mit einem offenen oder genehmigten TF-Antrag."
+        : "Der Einsatz kollidiert mit einem offenen oder genehmigten Urlaubsantrag.",
+      status: 409,
+    };
+  }
 
   const input: TemporaryAssignmentInput = {
     employeeId: employee.id,

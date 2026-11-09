@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { canAccessPage, effectivePermissions, permitted } from "./access-policy";
 import { permissionOptions } from "@/app/mitarbeiter/data";
+import { defaultRolePermissions } from "@/prisma/permission-sync";
 
 const all = Object.fromEntries(permissionOptions.map(({ id }) => [id, true]));
 const pages = [
@@ -19,9 +20,11 @@ test("Mitarbeiter bleiben trotz falsch vergebener Teamrechte auf eigene Funktion
   assert.equal(permissions.recordPerformance, true);
   for (const permission of ["teamShiftPlan", "viewEmployees", "editEmployees", "otherVacations",
     "approveVacation", "editAssignments", "editQualifications", "exportReports", "viewReports",
-    "approveShiftSwap", "managePerformanceTargets"]) {
+    "approveShiftSwap", "managePerformanceTargets", "manageTfDayEntitlements"]) {
     assert.equal(permitted(context, permission), false, permission);
   }
+  assert.equal(canAccessPage({ role: "FOREMAN", permissions: { manageTfDayEntitlements: true } }, "/admin/urlaub"), true);
+  assert.equal(canAccessPage({ role: "EMPLOYEE", permissions: { manageTfDayEntitlements: true } }, "/admin/urlaub"), false);
   for (const page of pages) assert.equal(canAccessPage(context, page), false, page);
   for (const page of ["/schichtplan", "/urlaub", "/leistung", "/schichttausch"]) {
     assert.equal(canAccessPage(context, page), true, page);
@@ -29,6 +32,11 @@ test("Mitarbeiter bleiben trotz falsch vergebener Teamrechte auf eigene Funktion
 });
 
 test("Admin und Vorarbeiter benötigen die tatsächlichen Funktionsrechte", () => {
+  assert.ok(permissionOptions.some(({ id, label }) =>
+    id === "manageTfDayEntitlements" && label === "TF-Tage-Ansprüche verwalten",
+  ));
+  assert.equal(defaultRolePermissions.ADMIN.has("manageTfDayEntitlements"), true);
+  assert.equal(defaultRolePermissions.FOREMAN.has("manageTfDayEntitlements"), false);
   for (const role of ["ADMIN", "FOREMAN"]) {
     for (const page of pages) assert.equal(canAccessPage({ role, permissions: {} }, page), false, `${role}: ${page}`);
     assert.equal(canAccessPage({ role, permissions: { managePerformanceTargets: false } }, "/admin/leistung/arbeitsplaetze"), false);

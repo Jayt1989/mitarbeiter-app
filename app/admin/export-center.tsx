@@ -15,7 +15,7 @@ type ExportKind = "week" | "year" | "vacation" | "absence" | "staffing";
 const exportKinds: { id: ExportKind; label: string; text: string }[] = [
   { id: "week", label: "Wochenplan", text: "Schichten pro Bereich und Kalenderwoche" },
   { id: "year", label: "Jahresplan", text: "Ein Mitarbeiter, Januar bis Dezember" },
-  { id: "vacation", label: "Urlaubsübersicht", text: "Urlaubskonten eines Jahres" },
+  { id: "vacation", label: "Urlaub & TF-Tage", text: "Jahreskonten und Zeiträume" },
   { id: "absence", label: "Abwesenheitsübersicht", text: "Nach Jahr, Monat und Bereich" },
   { id: "staffing", label: "Personalbesetzung", text: "Besetzung pro Tag und Bereich" },
 ];

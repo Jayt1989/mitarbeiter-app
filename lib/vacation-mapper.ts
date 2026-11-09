@@ -25,6 +25,7 @@ export function toVacationRequestDto(record: VacationRequestRecord): VacationReq
   return {
     id: record.id,
     employeeId: record.employeeId,
+    requestType: record.requestType,
     startDate: toDateOnly(record.startDate),
     endDate: toDateOnly(record.endDate),
     daysRequested: record.daysRequested,

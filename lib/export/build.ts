@@ -119,15 +119,16 @@ export async function buildExport(context: AuthorizationContext, params: Params)
 
   if (type === "vacation") {
     const year = parseYear(params.get("year"));
-    const [source, accounts] = await Promise.all([
+    const [source, accounts, tfDayAccounts] = await Promise.all([
       loadExportSource({ from: `${year}-01-01`, to: `${year}-12-31` }),
       prisma.vacationAccount.findMany({ where: { year } }),
+      prisma.tfDayAccount.findMany({ where: { year } }),
     ]);
     if (areaId) source.employees = source.employees.filter((employee) => employee.areaId === areaId);
     return {
       type,
       fileBase: `Urlaubsuebersicht_${year}`,
-      data: buildVacationExport(source, year, accounts),
+      data: buildVacationExport(source, year, accounts, tfDayAccounts),
       withPeriods: params.get("periods") === "1",
     };
   }

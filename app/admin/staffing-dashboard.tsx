@@ -58,6 +58,7 @@ const statusStyles: Partial<Record<AttendanceStatus, string>> = {
   Verfügbar: "bg-[#e7f3e9] text-[#256440]",
   Frei: "bg-[#eef0ed] text-[#66726a]",
   Urlaub: "bg-[#e8eff7] text-[#365f80]",
+  "TF-Tag": "bg-[#eee5f5] text-[#603d7a]",
   Krank: "bg-[#fde9e7] text-[#a33e31]",
   Schulung: "bg-[#fff3d9] text-[#886719]",
   Sonderurlaub: "bg-[#f2eaf7] text-[#704d89]",
@@ -73,6 +74,7 @@ type StaffFilter =
   | "Spät"
   | "Nacht"
   | "Urlaub"
+  | "TF-Tag"
   | "Krank"
   | "Abwesend"
   | "Verfügbar";
@@ -84,6 +86,7 @@ const staffFilters: StaffFilter[] = [
   "Spät",
   "Nacht",
   "Urlaub",
+  "TF-Tag",
   "Krank",
   "Abwesend",
   "Verfügbar",
@@ -103,7 +106,7 @@ function matchesFilter(employee: EmployeeDay, filter: StaffFilter) {
   if (filter === "Alle Mitarbeiter") return true;
   if (filter === "Abwesend") return employee.absenceType !== null;
   if (filter === "Verfügbar") return employee.status === "Verfügbar";
-  if (filter === "Urlaub" || filter === "Krank") {
+  if (filter === "Urlaub" || filter === "TF-Tag" || filter === "Krank") {
     return employee.absenceType === filter;
   }
   return employee.shift === filter;
@@ -720,6 +723,7 @@ function WeekView({
                 <WeekMetric label="Eingeplant" value={day.plannedTotal} />
                 <WeekMetric label="Verfügbar" value={day.availableTotal} />
                 <WeekMetric label="Urlaub" value={day.absenceCounts.Urlaub} />
+                <WeekMetric label="TF-Tag" value={day.absenceCounts["TF-Tag"]} />
                 <WeekMetric label="Krank" value={day.absenceCounts.Krank} />
                 <WeekMetric
                   label="Sonstige Abwesenheit"

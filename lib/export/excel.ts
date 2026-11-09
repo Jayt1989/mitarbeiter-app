@@ -78,7 +78,7 @@ function addStaffingSheet(workbook: ExcelJS.Workbook, rows: StaffingRow[], subti
     pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
   const headers = [
-    "Datum", "Feiertag", "Bereich", "Eingeplant", "Verfügbar", "Urlaub", "Krank",
+    "Datum", "Feiertag", "Bereich", "Eingeplant", "Verfügbar", "Urlaub", "TF", "Krank",
     "Früh verfügbar", "Spät verfügbar", "Nacht verfügbar", "Mindestbesetzung",
     "Qualifizierte Mitarbeiter", "Mindestanzahl qualifiziert", "Status",
   ];
@@ -89,7 +89,7 @@ function addStaffingSheet(workbook: ExcelJS.Workbook, rows: StaffingRow[], subti
       formatDateDe(row.date, { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }),
       row.holiday ?? "",
       row.areaName,
-      row.planned, row.available, row.vacation, row.sick,
+      row.planned, row.available, row.vacation, row.tfDays, row.sick,
       row.early, row.late, row.night, row.minimum,
       row.qualified, row.minimumQualified, row.status,
     ]);
@@ -241,7 +241,7 @@ export async function createWorkbook(result: ExportResult): Promise<Buffer> {
     sheet.getColumn(1).width = 13;
     for (let column = 2; column <= 32; column += 1) sheet.getColumn(column).width = 5;
     sheet.addRow([]);
-    sheet.addRow(["Legende: F = Früh · S = Spät · N = Nacht · fr = Frei · U = Urlaub · K = Krank · Sch = Schulung · SU = Sonderurlaub · FZA = Freizeitausgleich · Abw = sonstige Abwesenheit · * = temporärer Einsatz / Zusatzschicht (Details in Zellnotiz) · roter Rand oben = Feiertag"]);
+    sheet.addRow(["Legende: F = Früh · S = Spät · N = Nacht · fr = Frei · U = Urlaub · TF = Tariflicher Tag · K = Krank · Sch = Schulung · SU = Sonderurlaub · FZA = Freizeitausgleich · Abw = sonstige Abwesenheit · * = temporärer Einsatz / Zusatzschicht (Details in Zellnotiz) · roter Rand oben = Feiertag"]);
 
     addTable(
       workbook,
@@ -292,6 +292,26 @@ export async function createWorkbook(result: ExportResult): Promise<Buffer> {
         ["Mitarbeiter", "Personalnummer", "Von", "Bis", "Urlaubstage im Jahr", "Status"],
         data.periods.map((row) => [row.name, row.personnelNumber, formatDateDe(row.startDate), formatDateDe(row.endDate), row.days, row.status]),
         [26, 15, 13, 13, 18, 13],
+      );
+    }
+    addTable(
+      workbook,
+      "TF-Tage",
+      `TF-Tage ${data.year}`,
+      "Tarifliche Tage · Rest = Anspruch abzüglich genehmigter und offener TF-Tage",
+      ["Mitarbeiter", "Personalnummer", "Anspruch", "Genehmigt", "Offen beantragt", "Rest verfügbar"],
+      data.tfDayRows.map((row) => [row.name, row.personnelNumber, row.entitlement, row.approved, row.requested, row.remaining]),
+      [26, 15, 13, 13, 16, 15],
+    );
+    if (result.withPeriods) {
+      addTable(
+        workbook,
+        "TF-Zeiträume",
+        `TF-Zeiträume ${data.year}`,
+        "Genehmigte und beantragte tarifliche Tage",
+        ["Mitarbeiter", "Personalnummer", "Art", "Von", "Bis", "TF-Tage im Jahr", "Status"],
+        data.tfDayPeriods.map((row) => [row.name, row.personnelNumber, "TF", formatDateDe(row.startDate), formatDateDe(row.endDate), row.days, row.status]),
+        [26, 15, 8, 13, 13, 18, 13],
       );
     }
   }

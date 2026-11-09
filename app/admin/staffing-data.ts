@@ -1,5 +1,6 @@
 export const absenceTypes = [
   "Urlaub",
+  "TF-Tag",
   "Krank",
   "Schulung",
   "Sonderurlaub",

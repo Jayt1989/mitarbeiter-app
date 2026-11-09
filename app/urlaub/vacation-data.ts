@@ -15,6 +15,7 @@ export type VacationStatus = (typeof vacationStatuses)[number];
 export type VacationRequest = {
   id: string;
   employeeId: string;
+  requestType: "VACATION" | "TF_DAY";
   startDate: string;
   endDate: string;
   daysRequested: number;
@@ -33,6 +34,7 @@ export const sampleVacationRequests: VacationRequest[] = [
   {
     id: "vacation-2001",
     employeeId: "employee-1001",
+    requestType: "VACATION",
     startDate: "2026-10-12",
     endDate: "2026-10-13",
     daysRequested: 2,
@@ -44,6 +46,7 @@ export const sampleVacationRequests: VacationRequest[] = [
   {
     id: "vacation-2002",
     employeeId: "employee-1003",
+    requestType: "VACATION",
     startDate: "2026-10-05",
     endDate: "2026-10-06",
     daysRequested: 2,
@@ -55,6 +58,7 @@ export const sampleVacationRequests: VacationRequest[] = [
   {
     id: "vacation-2003",
     employeeId: "employee-1003",
+    requestType: "VACATION",
     startDate: "2026-10-19",
     endDate: "2026-10-23",
     daysRequested: 5,
@@ -65,6 +69,7 @@ export const sampleVacationRequests: VacationRequest[] = [
   {
     id: "vacation-2004",
     employeeId: "employee-1002",
+    requestType: "VACATION",
     startDate: "2026-09-07",
     endDate: "2026-09-11",
     daysRequested: 5,
@@ -76,6 +81,7 @@ export const sampleVacationRequests: VacationRequest[] = [
   {
     id: "vacation-2005",
     employeeId: "employee-1004",
+    requestType: "VACATION",
     startDate: "2026-11-02",
     endDate: "2026-11-06",
     daysRequested: 5,
@@ -140,10 +146,20 @@ export function countVacationDaysInYear(
   year: number,
   state: GermanState = DEFAULT_STATE,
 ): number {
+  return countScheduledWorkdaysInYear(employee, request.startDate, request.endDate, year, state);
+}
+
+export function countScheduledWorkdaysInYear(
+  employee: Employee,
+  requestStart: string,
+  requestEnd: string,
+  year: number,
+  state: GermanState = DEFAULT_STATE,
+): number {
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
-  const startDate = request.startDate < yearStart ? yearStart : request.startDate;
-  const endDate = request.endDate > yearEnd ? yearEnd : request.endDate;
+  const startDate = requestStart < yearStart ? yearStart : requestStart;
+  const endDate = requestEnd > yearEnd ? yearEnd : requestEnd;
 
   if (startDate > endDate) return 0;
   return countVacationDays(employee, startDate, endDate, state);

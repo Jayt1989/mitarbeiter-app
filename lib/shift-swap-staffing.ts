@@ -18,7 +18,7 @@ export function swapStaffingPreview(source: ExportSource, swap: SwapStaffingInpu
     })),
     ...source.vacations.filter((entry) => entry.status === "Genehmigt").map((entry): AbsenceEntry => ({
       employeeId: entry.employeeId, startDate: entry.startDate, endDate: entry.endDate,
-      type: "Urlaub", approval: "Genehmigt",
+      type: entry.requestType === "TF_DAY" ? "TF-Tag" : "Urlaub", approval: "Genehmigt",
     })),
   ];
   function summary(employees: Employee[]) {

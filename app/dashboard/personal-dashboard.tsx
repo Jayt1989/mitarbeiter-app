@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import type { DashboardDay, PersonalDashboardData } from "@/lib/personal-dashboard";
 import { performanceDashboardLink } from "@/lib/performance-rules";
 import { shiftTimeLabel } from "@/lib/shift-interval";
-import { absenceStyles, companyDayMarkerStyle, holidayMarkerStyle, shiftStyles } from "../schichtplan/shift-styles";
+import { absenceStyles, companyDayMarkerStyle, holidayMarkerStyle, shiftStyles, tfDayStyles } from "../schichtplan/shift-styles";
 import { qualificationLevelLabels, type QualificationLevel } from "../admin/qualifications-data";
 
 const shiftLongLabels: Record<string, string> = {
@@ -28,6 +28,7 @@ const shortDate = (value: string) => formatDate(value, { day: "2-digit", month: 
 function dayLabel(day: DashboardDay) {
   switch (day.kind) {
     case "vacation": return "Urlaub";
+    case "tfDay": return "TF";
     case "absence": return day.absence?.label ?? "Abwesend";
     case "free": return "Frei";
     case "unplanned": return "–";
@@ -44,6 +45,7 @@ function dayHeadline(day: DashboardDay) {
 function dayStyle(day: DashboardDay) {
   switch (day.kind) {
     case "vacation": return absenceStyles.Urlaub;
+    case "tfDay": return tfDayStyles.Genehmigt;
     case "absence": return absenceStyles[day.absence?.styleKey ?? "Sonstige Abwesenheit"];
     case "free": return shiftStyles.Frei;
     case "unplanned": return unplannedStyle;
@@ -248,6 +250,26 @@ export default function PersonalDashboard({ data }: { data: PersonalDashboardDat
                   Meine Urlaubsanträge
                 </Link>
               </div>
+            </Card>
+          )}
+
+          {data.tfDays && (
+            <Card title={`TF-Tage ${data.tfDays.year}`} id="meine-tf-tage" className="lg:col-span-2">
+              {data.tfDays.hasAccount ? (
+                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat label="Anspruch" value={`${data.tfDays.entitlement} Tage`} />
+                  <Stat label="Genehmigt" value={`${data.tfDays.approvedDays} Tage`} />
+                  <Stat label="Offen" value={`${data.tfDays.pendingDays} Tage`} />
+                  <Stat label="Rest verfügbar" value={`${data.tfDays.remainingDays} Tage`} emphasis />
+                </dl>
+              ) : (
+                <p className="text-sm text-[#68766d]">Für dieses Jahr sind keine TF-Tage hinterlegt.</p>
+              )}
+              {data.tfDays.hasAccount && data.tfDays.remainingDays > 0 && permissions.requestVacation && (
+                <Link href="/urlaub?antrag=neu&art=tf" className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-[#704d89] px-4 text-sm font-semibold text-white hover:bg-[#603d7a] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#704d89]">
+                  TF-Tag beantragen
+                </Link>
+              )}
             </Card>
           )}
 

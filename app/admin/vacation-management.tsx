@@ -5,12 +5,15 @@ import Link from "@/app/components/access-link";
 import NotificationBell from "@/app/components/notification-bell";
 import type { Employee } from "../mitarbeiter/data";
 import { employeeRepository } from "../mitarbeiter/repository";
-import { getScheduledWorkdays, vacationStatuses, type VacationRequest, type VacationStatus } from "../urlaub/vacation-data";
+import { getScheduledWorkdays, getVacationWorkdays, vacationStatuses, type VacationRequest, type VacationStatus } from "../urlaub/vacation-data";
 import { vacationRepository } from "../urlaub/vacation-repository";
 import { getDailyStaffing, getStaffingAbsences, getTrafficLight, type TrafficLight } from "./staffing";
 import { areaRepository } from "./areas-repository";
 import type { AreaConfiguration, WorkArea } from "./areas-data";
+import { calendarRepository } from "./calendar-repository";
 import { berlinTodayKey, currentBerlinYear, yearOptions } from "@/lib/calendar";
+import { DEFAULT_STATE } from "@/lib/holidays";
+import type { TfDayAccountSummary } from "./tf-day-data";
 
 const months = Array.from({ length: 12 }, (_, index) => ({
   value: String(index + 1).padStart(2, "0"),
@@ -32,6 +35,7 @@ const trafficStyles: Record<TrafficLight, string> = {
 
 type PageView = "Anträge" | "Kalender";
 type RequestFilter = "Alle" | VacationStatus;
+type RequestTypeFilter = "Alle" | "VACATION" | "TF_DAY";
 type ShiftFilter = "Alle Schichten" | "Früh" | "Spät" | "Nacht";
 type AreaFilter = "Alle Bereiche" | string;
 
@@ -133,13 +137,14 @@ function getCalendarDays(year: number, month: number) {
 }
 
 export default function VacationManagement({ access, requestId }: {
-  access: { employeeId: string | null; permissions: Record<string, boolean> };
+  access: { employeeId: string | null; role: string; permissions: Record<string, boolean> };
   requestId?: string;
 }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<VacationRequest[]>([]);
   const [pageView, setPageView] = useState<PageView>("Anträge");
   const [statusFilter, setStatusFilter] = useState<RequestFilter>("Alle");
+  const [typeFilter, setTypeFilter] = useState<RequestTypeFilter>("Alle");
   const [employeeFilter, setEmployeeFilter] = useState("Alle Mitarbeiter");
   const [shiftFilter, setShiftFilter] = useState<ShiftFilter>("Alle Schichten");
   const [areaFilter, setAreaFilter] = useState<AreaFilter>("Alle Bereiche");
@@ -149,22 +154,38 @@ export default function VacationManagement({ access, requestId }: {
   const [selectedRequest, setSelectedRequest] = useState<VacationRequest | null>(null);
   const [decisionError, setDecisionError] = useState("");
   const [areaConfiguration, setAreaConfiguration] = useState<AreaConfiguration>({ areas: [], minimums: {} });
+  const [calendarState, setCalendarState] = useState(DEFAULT_STATE);
+  const [tfYear, setTfYear] = useState(() => currentBerlinYear());
+  const [tfAccounts, setTfAccounts] = useState<TfDayAccountSummary[]>([]);
+  const [tfEntitlements, setTfEntitlements] = useState<Record<string, string>>({});
+  const [tfAccountError, setTfAccountError] = useState("");
+  const [tfAccountNotice, setTfAccountNotice] = useState("");
+  const [savingTfEmployee, setSavingTfEmployee] = useState("");
+  const [editingTfEmployee, setEditingTfEmployee] = useState("");
 
   useEffect(() => {
     let isCurrent = true;
+    const canViewRequests = access.permissions.otherVacations === true ||
+      access.permissions.approveVacation === true;
 
     void Promise.all([
-      employeeRepository.loadOverview("vacation"),
-      vacationRepository.loadAll(),
-      areaRepository.load(),
-    ]).then(([storedEmployees, storedRequests, storedAreas]) => {
+      canViewRequests || access.permissions.manageTfDayEntitlements
+        ? employeeRepository.loadOverview("vacation")
+        : Promise.resolve([]),
+      canViewRequests ? vacationRepository.loadAll() : Promise.resolve([]),
+      canViewRequests ? areaRepository.load() : Promise.resolve({ areas: [], minimums: {} }),
+      calendarRepository.load(),
+    ]).then(([storedEmployees, storedRequests, storedAreas, storedCalendar]) => {
       if (!isCurrent) return;
       if (storedEmployees) setEmployees(storedEmployees);
       setRequests(storedRequests);
       if (requestId) {
-        setSelectedRequest(storedRequests.find((request) => request.id === requestId) ?? null);
+        const selected = storedRequests.find((request) => request.id === requestId) ?? null;
+        setSelectedRequest(selected);
+        if (selected?.requestType === "TF_DAY") setTfYear(Number(selected.startDate.slice(0, 4)));
       }
       setAreaConfiguration(storedAreas);
+      setCalendarState(storedCalendar.state);
     }).catch((error: unknown) => {
       if (isCurrent) setDecisionError(error instanceof Error ? error.message : "Urlaubsanträge konnten nicht geladen werden.");
     });
@@ -172,15 +193,41 @@ export default function VacationManagement({ access, requestId }: {
     return () => {
       isCurrent = false;
     };
-  }, [requestId]);
+  }, [requestId, access.permissions]);
 
-  const canOpenAdmin = access.permissions.otherVacations === true || access.permissions.approveVacation === true;
+  useEffect(() => {
+    let isCurrent = true;
+    if (!access.permissions.manageTfDayEntitlements && !access.permissions.otherVacations && !access.permissions.approveVacation) return;
+
+    void fetch(`/api/tf-day-accounts?year=${tfYear}`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error ?? "TF-Tage konnten nicht geladen werden.");
+        }
+        return response.json() as Promise<TfDayAccountSummary[]>;
+      })
+      .then((rows) => {
+        if (!isCurrent) return;
+        setTfAccounts(rows);
+        setTfEntitlements(Object.fromEntries(rows.map((row) => [row.employeeId, String(row.entitlement)])));
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) setTfAccountError(error instanceof Error ? error.message : "TF-Tage konnten nicht geladen werden.");
+      });
+    return () => { isCurrent = false; };
+  }, [tfYear, access.permissions]);
+
+  const canOpenAdmin = access.permissions.otherVacations === true ||
+    access.permissions.approveVacation === true ||
+    access.permissions.manageTfDayEntitlements === true;
   const canApprove = access.permissions.approveVacation === true;
   const canViewOthers = access.permissions.otherVacations === true || canApprove;
   const visibleRequests = requests.filter(
     (request) => canViewOthers || request.employeeId === access.employeeId,
   );
   const filteredRequests = visibleRequests
+    .filter((request) => typeFilter === "Alle" || request.requestType === typeFilter)
     .filter((request) => statusFilter === "Alle" || request.status === statusFilter)
     .filter((request) => employeeFilter === "Alle Mitarbeiter" || request.employeeId === employeeFilter)
     .filter((request) => areaFilter === "Alle Bereiche" || employees.find((employee) => employee.id === request.employeeId)?.areaId === areaFilter)
@@ -212,14 +259,63 @@ export default function VacationManagement({ access, requestId }: {
       );
       setSelectedRequest(updatedRequest);
       setDecisionError("");
-    } catch {
-      setDecisionError("Die Entscheidung konnte nicht gespeichert werden.");
+      if (updatedRequest.requestType === "TF_DAY") {
+        try {
+          const response = await fetch(`/api/tf-day-accounts?year=${updatedRequest.startDate.slice(0, 4)}`, { cache: "no-store" });
+          const payload = await response.json().catch(() => null) as TfDayAccountSummary[] | { error?: string } | null;
+          if (!response.ok) {
+            const message = payload && !Array.isArray(payload) ? payload.error : undefined;
+            throw new Error(message ?? "TF-Tage konnten nicht aktualisiert werden.");
+          }
+          setTfAccounts(payload as TfDayAccountSummary[]);
+        } catch (error) {
+          setTfAccountError(error instanceof Error ? error.message : "TF-Tage konnten nicht aktualisiert werden.");
+        }
+      }
+    } catch (error) {
+      setDecisionError(error instanceof Error ? error.message : "Die Entscheidung konnte nicht gespeichert werden.");
     }
   }
 
   function openRequest(request: VacationRequest) {
     setDecisionError("");
     setSelectedRequest(request);
+    if (request.requestType === "TF_DAY") setTfYear(Number(request.startDate.slice(0, 4)));
+  }
+
+  async function saveTfEntitlement(employeeId: string) {
+    setSavingTfEmployee(employeeId);
+    setTfAccountError("");
+    setTfAccountNotice("");
+    try {
+      const response = await fetch("/api/tf-day-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId,
+          year: tfYear,
+          entitlement: Number(tfEntitlements[employeeId]),
+        }),
+      });
+      const payload = await response.json().catch(() => null) as TfDayAccountSummary | { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload && "error" in payload ? payload.error : "TF-Anspruch konnte nicht gespeichert werden.");
+      }
+      const updated = payload as TfDayAccountSummary;
+      setTfAccounts((current) => {
+        const existing = current.some((entry) => entry.employeeId === employeeId && entry.year === updated.year);
+        return existing
+          ? current.map((entry) => entry.employeeId === employeeId && entry.year === updated.year ? updated : entry)
+          : [...current, updated];
+      });
+      setTfEntitlements((current) => ({ ...current, [employeeId]: String(updated.entitlement) }));
+      setEditingTfEmployee("");
+      setTfAccountNotice("TF-Anspruch wurde gespeichert.");
+    } catch (error) {
+      setTfAccountError(error instanceof Error ? error.message : "TF-Anspruch konnte nicht gespeichert werden.");
+    } finally {
+      setSavingTfEmployee("");
+    }
   }
 
   const selectedEmployee = selectedRequest
@@ -232,6 +328,15 @@ export default function VacationManagement({ access, requestId }: {
     ? getRequestImpact(selectedRequest, employees, requests, areaConfiguration)
     : [];
   const hasShortage = impacts.some((impact) => impact.area !== null && impact.after < impact.minimum);
+  const selectedTfAccount = selectedRequest?.requestType === "TF_DAY"
+    ? tfAccounts.find((entry) => entry.employeeId === selectedRequest.employeeId && entry.year === Number(selectedRequest.startDate.slice(0, 4)))
+    : undefined;
+  const selectedTfRequestYearDays = selectedRequest && selectedEmployee && selectedRequest.requestType === "TF_DAY"
+    ? getVacationWorkdays(selectedEmployee, selectedRequest.startDate, selectedRequest.endDate, calendarState)
+      .filter((day) => day.date.startsWith(`${selectedTfAccount?.year ?? selectedRequest.startDate.slice(0, 4)}-`)).length
+    : 0;
+  const canManageTfDays = ["ADMIN", "FOREMAN"].includes(access.role) &&
+    access.permissions.manageTfDayEntitlements === true;
 
   if (!canOpenAdmin) {
     return (
@@ -263,8 +368,8 @@ export default function VacationManagement({ access, requestId }: {
       <div className="mx-auto max-w-7xl px-4 pb-14 pt-8 sm:px-8 sm:pt-12">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold tracking-[0.15em] text-[#668071]">ADMIN · URLAUBSPLANUNG</p>
-            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Urlaubsanträge</h1>
+            <p className="text-xs font-semibold tracking-[0.15em] text-[#668071]">ADMIN · ABWESENHEITSPLANUNG</p>
+            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Urlaubs- und TF-Anträge</h1>
             <p className="mt-2 text-sm text-[#68766d]">Anträge prüfen und Auswirkungen auf die Besetzung sehen.</p>
           </div>
           <div className="flex h-11 w-fit items-center rounded-lg border border-[#dce4dc] bg-white p-1" aria-label="Urlaubsansicht">
@@ -276,7 +381,64 @@ export default function VacationManagement({ access, requestId }: {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {(canManageTfDays || canViewOthers) && (
+          <section className="mt-7 rounded-xl border border-[#e0e7e0] bg-white p-4 sm:p-6" aria-labelledby="tf-entitlements-title">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.12em] text-[#704d89]">TARIFLICHE TAGE</p>
+                <h2 id="tf-entitlements-title" className="mt-1 text-lg font-semibold">TF-Tage {tfYear}</h2>
+                <p className="mt-1 text-xs text-[#77847b]">Anspruch, genehmigte und offene TF-Tage sowie Restbestand pro Mitarbeiter.</p>
+              </div>
+              <label className="block w-full sm:max-w-40">
+                <span className="mb-1.5 block text-xs font-medium text-[#526056]">Kalenderjahr</span>
+                <select value={tfYear} onChange={(event) => setTfYear(Number(event.target.value))} className={filterClass}>
+                  {yearOptions(currentBerlinYear()).map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </label>
+            </div>
+            {tfAccountError && <p role="alert" className="mt-3 rounded-lg bg-[#fff2ed] px-3 py-2 text-sm text-[#9f422d]">{tfAccountError}</p>}
+            {tfAccountNotice && <p role="status" className="mt-3 rounded-lg bg-[#e7f3e9] px-3 py-2 text-sm text-[#256440]">{tfAccountNotice}</p>}
+            <div className="mt-4 space-y-3">
+              {employees.filter((employee) => employee.isActive).map((employee) => {
+                const account = tfAccounts.find((entry) => entry.employeeId === employee.id);
+                return (
+                  <article key={employee.id} className="rounded-lg border border-[#e8ede8] bg-[#fbfcfa] p-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold">{employee.firstName} {employee.lastName}</h3>
+                      <p className="mt-1 text-xs text-[#68766d]">
+                        Anspruch: {account?.entitlement ?? 0} · Genehmigt: {account?.approvedDays ?? 0} · Offen: {account?.pendingDays ?? 0} · Rest: {account?.remainingDays ?? 0} Tage
+                        {!account?.hasAccount && " · Noch nicht hinterlegt"}
+                      </p>
+                    </div>
+                    {canManageTfDays && (
+                      editingTfEmployee === employee.id ? (
+                        <div className="mt-3 flex items-center gap-2 sm:mt-0 sm:w-64">
+                          <label className="sr-only" htmlFor={`tf-entitlement-${employee.id}`}>TF-Tage Anspruch für {employee.firstName} {employee.lastName}</label>
+                          <input id={`tf-entitlement-${employee.id}`} type="number" min="0" max="365" step="1" value={tfEntitlements[employee.id] ?? "0"} onChange={(event) => setTfEntitlements((current) => ({ ...current, [employee.id]: event.target.value }))} className="h-10 min-w-0 flex-1 rounded-lg border border-[#dce4dc] px-3 text-sm" />
+                          <button type="button" disabled={savingTfEmployee === employee.id} onClick={() => void saveTfEntitlement(employee.id)} className="min-h-10 rounded-lg bg-[#704d89] px-3 text-xs font-semibold text-white hover:bg-[#603d7a] disabled:opacity-60">Speichern</button>
+                          <button type="button" onClick={() => { setTfEntitlements((current) => ({ ...current, [employee.id]: String(account?.entitlement ?? 0) })); setEditingTfEmployee(""); }} className="min-h-10 rounded-lg px-2 text-xs font-medium text-[#68766d] hover:bg-[#f2f5f1]">Abbrechen</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setEditingTfEmployee(employee.id)} className="mt-3 min-h-10 rounded-lg border border-[#d9cce5] px-3 text-xs font-semibold text-[#704d89] hover:bg-[#f7f2fa] sm:mt-0">TF-Tage bearbeiten</button>
+                      )
+                    )}
+                  </article>
+                );
+              })}
+              {employees.filter((employee) => employee.isActive).length === 0 && <EmptyState />}
+            </div>
+          </section>
+        )}
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-[#526056]">Art</span>
+            <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as RequestTypeFilter)} className={filterClass}>
+              <option value="Alle">Alle</option>
+              <option value="VACATION">Urlaub</option>
+              <option value="TF_DAY">TF-Tag</option>
+            </select>
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium text-[#526056]">Status</span>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as RequestFilter)} className={filterClass}>
@@ -329,14 +491,15 @@ export default function VacationManagement({ access, requestId }: {
             <p className="mb-3 text-xs text-[#77847b]" aria-live="polite">{filteredRequests.length} Anträge</p>
             <div className="hidden overflow-hidden rounded-xl border border-[#e0e7e0] bg-white md:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1150px] border-collapse text-left">
+                <table className="w-full min-w-[1220px] border-collapse text-left">
                   <thead className="bg-[#f8faf7] text-[10px] font-semibold uppercase tracking-[0.08em] text-[#77847b]">
                     <tr>
                       <th scope="col" className="px-4 py-3">Mitarbeiter</th>
                       <th scope="col" className="px-3 py-3">Personalnummer</th>
+                      <th scope="col" className="px-3 py-3">Art</th>
                       <th scope="col" className="px-3 py-3">Von</th>
                       <th scope="col" className="px-3 py-3">Bis</th>
-                      <th scope="col" className="px-3 py-3">Urlaubstage</th>
+                      <th scope="col" className="px-3 py-3">Tage</th>
                       <th scope="col" className="px-3 py-3">Beantragt am</th>
                       <th scope="col" className="px-3 py-3">Status</th>
                       <th scope="col" className="px-3 py-3">Bemerkung</th>
@@ -379,6 +542,8 @@ export default function VacationManagement({ access, requestId }: {
           area={selectedArea}
           impacts={impacts}
           hasShortage={hasShortage}
+          tfAccount={selectedTfAccount}
+          tfRequestYearDays={selectedTfRequestYearDays}
           canApprove={canApprove}
           error={decisionError}
           onClose={() => setSelectedRequest(null)}
@@ -396,6 +561,7 @@ function VacationRow({ request, employee, onOpen }: { request: VacationRequest; 
     <tr className="hover:bg-[#fbfcfa]">
       <td className="px-4 py-3.5 text-sm font-medium">{employee ? `${employee.firstName} ${employee.lastName}` : "Unbekannter Mitarbeiter"}</td>
       <td className="px-3 py-3.5 text-sm tabular-nums text-[#526056]">{employee?.personnelNumber ?? "–"}</td>
+      <td className="px-3 py-3.5"><RequestTypeBadge requestType={request.requestType} /></td>
       <td className="px-3 py-3.5 text-sm">{formatDate(request.startDate)}</td>
       <td className="px-3 py-3.5 text-sm">{formatDate(request.endDate)}</td>
       <td className="px-3 py-3.5 text-sm tabular-nums">{request.daysRequested}</td>
@@ -413,11 +579,12 @@ function VacationCard({ request, employee, onOpen }: { request: VacationRequest;
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">{employee ? `${employee.firstName} ${employee.lastName}` : "Unbekannter Mitarbeiter"}</h2>
-          <p className="mt-1 text-xs text-[#77847b]">{employee?.personnelNumber ?? "–"} · {request.daysRequested} Tage</p>
+          <p className="mt-1 text-xs text-[#77847b]">{employee?.personnelNumber ?? "–"} · {request.daysRequested} {request.requestType === "TF_DAY" ? "TF-Tage" : "Urlaubstage"}</p>
         </div>
         <StatusBadge status={request.status} />
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[#edf0ec] pt-3">
+        <Detail label="Art" value={request.requestType === "TF_DAY" ? "Tariflicher Tag (TF)" : "Urlaub"} />
         <Detail label="Von" value={formatDate(request.startDate)} />
         <Detail label="Bis" value={formatDate(request.endDate)} />
         <Detail label="Beantragt am" value={formatTimestamp(request.requestedAt)} />
@@ -505,8 +672,8 @@ function VacationCalendar({ year, month, calendar, requests, employees, onMonthC
                 {pendingCount > 0 && <p className="mt-0.5 text-[9px] text-[#886719]">{pendingCount} beantragt</p>}
                 <div className="mt-1.5 space-y-1">
                   {events.map((event) => (
-                    <button key={event.request.id} type="button" onClick={() => onOpen(event.request)} className={`block w-full truncate rounded px-1.5 py-1 text-left text-[9px] font-medium ${event.request.status === "Genehmigt" ? "bg-[#e7f3e9] text-[#256440]" : "bg-[#fff3d9] text-[#886719]"}`}>
-                      {event.employee.firstName} {event.employee.lastName} · {event.shift}
+                    <button key={event.request.id} type="button" onClick={() => onOpen(event.request)} className={`block w-full truncate rounded px-1.5 py-1 text-left text-[9px] font-medium ${event.request.requestType === "TF_DAY" ? "bg-[#eee5f5] text-[#603d7a]" : event.request.status === "Genehmigt" ? "bg-[#e7f3e9] text-[#256440]" : "bg-[#fff3d9] text-[#886719]"}`}>
+                      {event.request.requestType === "TF_DAY" ? "TF · " : ""}{event.employee.firstName} {event.employee.lastName} · {event.shift}
                     </button>
                   ))}
                 </div>
@@ -529,7 +696,7 @@ function VacationCalendar({ year, month, calendar, requests, employees, onMonthC
                 <span className="text-xs text-[#256440]">{approvedCount} genehmigt</span>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {events.map((event) => <button key={event.request.id} type="button" onClick={() => onOpen(event.request)} className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${event.request.status === "Genehmigt" ? "bg-[#e7f3e9] text-[#256440]" : "bg-[#fff3d9] text-[#886719]"}`}>{event.employee.firstName} {event.employee.lastName} · {event.shift}</button>)}
+                {events.map((event) => <button key={event.request.id} type="button" onClick={() => onOpen(event.request)} className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${event.request.requestType === "TF_DAY" ? "bg-[#eee5f5] text-[#603d7a]" : event.request.status === "Genehmigt" ? "bg-[#e7f3e9] text-[#256440]" : "bg-[#fff3d9] text-[#886719]"}`}>{event.request.requestType === "TF_DAY" ? "TF · " : ""}{event.employee.firstName} {event.employee.lastName} · {event.shift}</button>)}
               </div>
             </article>
           );
@@ -539,12 +706,14 @@ function VacationCalendar({ year, month, calendar, requests, employees, onMonthC
   );
 }
 
-function VacationDetailDialog({ request, employee, area, impacts, hasShortage, canApprove, error, onClose, onDecide }: {
+function VacationDetailDialog({ request, employee, area, impacts, hasShortage, tfAccount, tfRequestYearDays, canApprove, error, onClose, onDecide }: {
   request: VacationRequest;
   employee: Employee;
   area: WorkArea | null;
   impacts: VacationImpact[];
   hasShortage: boolean;
+  tfAccount?: TfDayAccountSummary;
+  tfRequestYearDays: number;
   canApprove: boolean;
   error: string;
   onClose: () => void;
@@ -569,7 +738,8 @@ function VacationDetailDialog({ request, employee, area, impacts, hasShortage, c
             <Detail label="Bereich" value={area?.name ?? "Kein Bereich"} />
             <Detail label="Von" value={formatDate(request.startDate)} />
             <Detail label="Bis" value={formatDate(request.endDate)} />
-            <Detail label="Urlaubstage" value={`${request.daysRequested}`} />
+            <Detail label="Art" value={request.requestType === "TF_DAY" ? "Tariflicher Tag (TF)" : "Urlaub"} />
+            <Detail label={request.requestType === "TF_DAY" ? "TF-Tage" : "Urlaubstage"} value={`${request.daysRequested}`} />
             <Detail label="Beantragt am" value={formatTimestamp(request.requestedAt)} />
             <div><p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#859189]">Status</p><div className="mt-1"><StatusBadge status={request.status} /></div></div>
           </div>
@@ -577,6 +747,24 @@ function VacationDetailDialog({ request, employee, area, impacts, hasShortage, c
             <h3 className="text-sm font-semibold">Bemerkung</h3>
             <p className="mt-1 whitespace-pre-wrap text-sm text-[#68766d]">{request.comment || "Keine Bemerkung angegeben."}</p>
           </div>
+
+          {request.requestType === "TF_DAY" && tfAccount && (
+            <section className="rounded-lg border border-[#d9cce5] bg-[#f7f2fa] p-4">
+              <h3 className="text-sm font-semibold text-[#603d7a]">TF-Tage {tfAccount.year}</h3>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Detail label="Anspruch" value={`${tfAccount.entitlement}`} />
+                <Detail label="Genehmigt" value={`${tfAccount.approvedDays}`} />
+                <Detail label="Offen" value={`${tfAccount.pendingDays}`} />
+                <Detail label="Rest verfügbar" value={`${tfAccount.remainingDays}`} />
+              </div>
+              {request.status === "Beantragt" && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Detail label="Rest vor Genehmigung" value={`${tfAccount.remainingDays + tfRequestYearDays}`} />
+                  <Detail label="Rest nach Genehmigung" value={`${tfAccount.remainingDays}`} />
+                </div>
+              )}
+            </section>
+          )}
 
           <section aria-labelledby="besetzungsfolgen-title">
             <div className="mb-3">
@@ -596,7 +784,7 @@ function VacationDetailDialog({ request, employee, area, impacts, hasShortage, c
                   <article key={impact.date} className="rounded-lg border border-[#e0e7e0] bg-[#fbfcfa] p-3.5 sm:flex sm:items-center sm:justify-between sm:gap-4">
                     <div>
                       <p className="text-sm font-semibold">{formatDate(impact.date)} · {impact.area?.name ?? "Kein Bereich"} · {impact.shift}schicht</p>
-                      <p className="mt-1 text-xs text-[#68766d]">Vor Urlaub: {impact.before} verfügbar · Nach Genehmigung: {impact.after} verfügbar · Mindestbesetzung: {impact.minimum}</p>
+                      <p className="mt-1 text-xs text-[#68766d]">Vor Antrag: {impact.before} verfügbar · Nach Genehmigung: {impact.after} verfügbar · Mindestbesetzung: {impact.minimum}</p>
                     </div>
                     <TrafficBadge status={impact.trafficLight} />
                   </article>
@@ -628,6 +816,15 @@ function VacationDetailDialog({ request, employee, area, impacts, hasShortage, c
 
 function StatusBadge({ status }: { status: VacationStatus }) {
   return <span className={`inline-flex w-fit shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${statusStyles[status]}`}>{status}</span>;
+}
+
+function RequestTypeBadge({ requestType }: { requestType: VacationRequest["requestType"] }) {
+  const isTfDay = requestType === "TF_DAY";
+  return (
+    <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${isTfDay ? "bg-[#eee5f5] text-[#603d7a]" : "bg-[#e7f3e9] text-[#256440]"}`}>
+      {isTfDay ? "TF" : "Urlaub"}
+    </span>
+  );
 }
 
 function Detail({ label, value }: { label: string; value: string }) {

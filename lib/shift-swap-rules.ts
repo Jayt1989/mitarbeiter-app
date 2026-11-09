@@ -74,7 +74,7 @@ export function swapDayWarnings(facts: SwapDayFacts): string[] {
   const warnings: string[] = [];
   if (!facts.active) warnings.push(`${prefix}Mitarbeiter ist inaktiv.`);
   if (!facts.shift || facts.shift === "Frei") warnings.push(`${prefix}Keine Arbeitsschicht an diesem Tag.`);
-  if (facts.vacation) warnings.push(`${prefix}Es besteht ein offener oder genehmigter Urlaubsantrag.`);
+  if (facts.vacation) warnings.push(`${prefix}Es besteht ein offener oder genehmigter Urlaubs- oder TF-Antrag.`);
   if (facts.absence) warnings.push(`${prefix}An diesem Tag liegt eine Abwesenheit vor.`);
   if (facts.manual) warnings.push(`${prefix}Es besteht bereits eine manuelle Schichtzuweisung.`);
   if (facts.assignment) warnings.push(`${prefix}Es besteht ein temporärer Einsatz.`);

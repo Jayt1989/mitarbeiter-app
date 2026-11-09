@@ -35,6 +35,7 @@ async function loadRows(previousYear: number, nextYear: number): Promise<Vacatio
     prisma.vacationAccount.findMany({ where: { year: { in: [previousYear, nextYear] } } }),
     prisma.vacationRequest.findMany({
       where: {
+        requestType: "VACATION",
         status: "APPROVED",
         startDate: { lte: new Date(`${previousYear}-12-31T00:00:00.000Z`) },
         endDate: { gte: new Date(`${previousYear}-01-01T00:00:00.000Z`) },

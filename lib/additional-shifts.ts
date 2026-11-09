@@ -84,7 +84,7 @@ export async function checkAdditionalShifts(db: Db, input: AdditionalShiftBatch,
         issue("Am Zieltag besteht bereits eine normale Schicht.");
       }
     }
-    if (vacations.some((entry) => entry.employeeId === id && periodConflict(entry))) issue("Offener oder genehmigter Urlaub im Schichtzeitraum.");
+    if (vacations.some((entry) => entry.employeeId === id && periodConflict(entry))) issue("Offener oder genehmigter Urlaub / TF-Tag im Schichtzeitraum.");
     if (absences.some((entry) => entry.employeeId === id && periodConflict(entry))) issue("Krankheit / Abwesenheit im Schichtzeitraum.");
     if (additional.some((entry) => entry.employeeId === id && (entry.date.getTime() === targetDate.getTime() ||
       intervalsOverlap(interval, shiftInterval(entry.date.toISOString().slice(0, 10), fromShiftCode(entry.shift) as ActiveShift))))) {

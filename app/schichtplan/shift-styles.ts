@@ -15,8 +15,15 @@ export const vacationStyles: Record<Exclude<VacationStatus, "Storniert">, string
   Abgelehnt: "border border-l-4 border-[#d6dcde] border-l-[#c54d3f] bg-[#eef0ed] text-[#66726a]",
 };
 
+export const tfDayStyles: Record<Exclude<VacationStatus, "Storniert">, string> = {
+  Beantragt: "border border-[#b69bc9] bg-[#f2ebf7] font-semibold text-[#704d89]",
+  Genehmigt: "border border-[#9272b6] bg-[#eee5f5] font-semibold text-[#603d7a] ring-1 ring-inset ring-[#9272b6]",
+  Abgelehnt: "border border-l-4 border-[#d6dcde] border-l-[#9272b6] bg-[#f4f0f7] text-[#756483]",
+};
+
 export const absenceStyles: Record<AbsenceType, string> = {
   Urlaub: vacationStyles.Genehmigt,
+  "TF-Tag": "border border-[#9272b6] bg-[#eee5f5] font-semibold text-[#603d7a]",
   Krank: "border border-[#e69b93] bg-[#fce4e2] text-[#9b342b]",
   Schulung: "border border-[#8bcfc8] bg-[#d9f2ef] text-[#146b66]",
   Sonderurlaub: "border border-[#dfabc2] bg-[#f8e3ed] text-[#91405e]",

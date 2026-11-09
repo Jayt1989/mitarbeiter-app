@@ -45,7 +45,7 @@ export type DashboardAbsence = {
 
 export type DashboardDay = {
   date: string;
-  kind: "shift" | "free" | "unplanned" | "vacation" | "absence";
+  kind: "shift" | "free" | "unplanned" | "vacation" | "tfDay" | "absence";
   shift: Shift | null;
   absence: DashboardAbsence | null;
   areaName: string | null;
@@ -86,6 +86,14 @@ export type PersonalDashboardData = {
     openRequests: number;
     availableDays: number;
     nextVacation: VacationRequest | null;
+  } | null;
+  tfDays: {
+    year: number;
+    hasAccount: boolean;
+    entitlement: number;
+    approvedDays: number;
+    pendingDays: number;
+    remainingDays: number;
   } | null;
   absences: DashboardAbsence[];
   upcomingAssignment: TemporaryAssignment | null;
@@ -142,9 +150,9 @@ export async function loadPersonalDashboard(
   if (!permissions.qualifications) employee.qualifications = {};
   const areaName = record.departments.find((entry) => entry.isPrimary)?.department.name ?? null;
 
-  const [vacationRecords, vacationAccount, absenceRecords, assignmentRecords, qualificationRecords, calendar] =
+  const [vacationRecords, vacationAccount, tfDayAccount, absenceRecords, assignmentRecords, qualificationRecords, calendar] =
     await Promise.all([
-      permissions.ownVacation || permissions.shiftPlan
+      permissions.ownVacation || permissions.requestVacation || permissions.shiftPlan
         ? prisma.vacationRequest.findMany({
             where: { employeeId, status: { in: [VacationStatus.REQUESTED, VacationStatus.APPROVED] } },
             orderBy: { startDate: "asc" },
@@ -152,6 +160,9 @@ export async function loadPersonalDashboard(
         : Promise.resolve([]),
       permissions.ownVacation
         ? prisma.vacationAccount.findUnique({ where: { employeeId_year: { employeeId, year } } })
+        : Promise.resolve(null),
+      permissions.ownVacation || permissions.requestVacation
+        ? prisma.tfDayAccount.findUnique({ where: { employeeId_year: { employeeId, year } } })
         : Promise.resolve(null),
       permissions.shiftPlan
         ? prisma.absence.findMany({
@@ -198,7 +209,9 @@ export async function loadPersonalDashboard(
       entry.startDate <= dateKey && entry.endDate >= dateKey;
 
     // Genehmigter Urlaub und erfasste Abwesenheiten haben Vorrang vor Schicht und Einsatz.
-    if (approvedVacations.some(covers)) return { ...base, kind: "vacation" };
+    const approvedRequest = approvedVacations.find(covers);
+    if (approvedRequest?.requestType === "TF_DAY") return { ...base, kind: "tfDay" };
+    if (approvedRequest) return { ...base, kind: "vacation" };
     const absence = absences.find((entry) => !entry.requested && covers(entry)) ?? null;
     if (absence) return { ...base, kind: "absence", absence };
     if (shift === null) return { ...base, kind: "unplanned" };
@@ -226,12 +239,13 @@ export async function loadPersonalDashboard(
   }
 
   let vacation: PersonalDashboardData["vacation"] = null;
+  let tfDays: PersonalDashboardData["tfDays"] = null;
   if (permissions.ownVacation) {
     const annualAllowance = vacationAccount?.annualAllowance ?? employee.annualLeaveAllowance;
     const carryOverDays = vacationAccount?.carryOverDays ?? employee.carryOverLeaveDays;
     const daysInYear = (status: VacationRequest["status"]) =>
       vacations
-        .filter((entry) => entry.status === status)
+        .filter((entry) => entry.status === status && entry.requestType === "VACATION")
         .reduce((sum, entry) => sum + countVacationDaysInYear(employee, entry, year, calendar.state), 0);
     const approvedDays = daysInYear("Genehmigt");
     const requestedDays = daysInYear("Beantragt");
@@ -242,9 +256,27 @@ export async function loadPersonalDashboard(
       carryOverDays,
       approvedDays,
       requestedDays,
-      openRequests: vacations.filter((entry) => entry.status === "Beantragt").length,
+      openRequests: vacations.filter((entry) => entry.status === "Beantragt" && entry.requestType === "VACATION").length,
       availableDays: annualAllowance + carryOverDays - approvedDays - requestedDays,
-      nextVacation: approvedVacations.find((entry) => entry.startDate > todayKey) ?? null,
+      nextVacation: approvedVacations.find((entry) => entry.requestType === "VACATION" && entry.startDate > todayKey) ?? null,
+    };
+  }
+
+  if (permissions.ownVacation || permissions.requestVacation) {
+    const tfEntitlement = tfDayAccount?.entitlement ?? 0;
+    const tfApproved = vacations
+      .filter((entry) => entry.requestType === "TF_DAY" && entry.status === "Genehmigt")
+      .reduce((sum, entry) => sum + countVacationDaysInYear(employee, entry, year, calendar.state), 0);
+    const tfPending = vacations
+      .filter((entry) => entry.requestType === "TF_DAY" && entry.status === "Beantragt")
+      .reduce((sum, entry) => sum + countVacationDaysInYear(employee, entry, year, calendar.state), 0);
+    tfDays = {
+      year,
+      hasAccount: Boolean(tfDayAccount),
+      entitlement: tfEntitlement,
+      approvedDays: tfApproved,
+      pendingDays: tfPending,
+      remainingDays: tfEntitlement - tfApproved - tfPending,
     };
   }
 
@@ -264,6 +296,7 @@ export async function loadPersonalDashboard(
       ? Array.from({ length: 7 }, (_, index) => dayInfo(addDays(weekStart, index)))
       : [],
     vacation,
+    tfDays,
     absences: absences.filter((entry) => entry.endDate >= todayKey).slice(0, 5),
     upcomingAssignment: assignments.find((entry) => entry.endDate >= todayKey) ?? null,
     qualifications: qualificationRecords

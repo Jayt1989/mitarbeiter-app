@@ -617,3 +617,22 @@ DOTENV_CONFIG_PATH=.env.local ISOLATION_DB_TESTS=1 node -r dotenv/config node_mo
 ```
 
 Der Zusatzschichttest nutzt nur ein temporäres lokales Schema und prüft Migrationserhaltung, alle sechs Samstag-/Sonntagsschichten, Konflikte, Nacht-Folgetag, Qualifikationswarnung, Freigabe, Änderung, Benachrichtigungen, Stornierung, Audit, Mehrfachauswahl und parallele Doppelplanung. Der HTTP-Trennungstest prüft zusätzlich echte API-Aufrufe, entzogenes Freigaberecht und eigene Kalender-/Dashboardanzeige. Beide entfernen ausschließlich ihre eigenen Testschemas.
+
+## Tarifliche Tage (TF-Tage)
+
+TF-Tage werden als eigener `VacationRequest`-Typ (`TF_DAY`) geführt; normale Urlaubsanträge bleiben `VACATION`. Der Anspruch steht pro Mitarbeiter und Kalenderjahr in `TfDayAccount`. Nicht angelegte Konten haben keinen Anspruch, es gibt keinen automatischen Jahresübertrag. Rest = Anspruch − genehmigte TF-Arbeitstage − offene TF-Arbeitstage. Gezählt werden tatsächliche Schichtarbeitstage nach derselben Schicht- und Feiertagslogik wie beim Urlaub. Die Prüfung erfolgt serverseitig beim Beantragen und erneut beim Genehmigen.
+
+Anträge nutzen die bestehenden Rechte für eigene Anträge und Genehmigungen. Zum Ändern eines Anspruchs ist zusätzlich `manageTfDayEntitlements` erforderlich; die API erlaubt dies ausschließlich Admins und Vorarbeitern, denen dieses Recht erteilt wurde. TF-Anträge werden in Benachrichtigungen, Jahresplan, Personalbesetzung, Konfliktprüfungen und Exporten als eigene Art (`TF`/lila) ausgewiesen.
+
+Die additive Migration `20261015130000_tf_day_entitlements` ergänzt den Antragstyp, Benachrichtigungstypen und das Jahreskonto. Vor Aktivierung des Codes muss sie gegen die **lokale Entwicklungsdatenbank** angewendet und der neue Permission-Key synchronisiert werden. Die folgenden Befehle nur ausführen, wenn `.env.local` auf eine lokale Datenbank zeigt:
+
+```bash
+DOTENV_CONFIG_PATH=.env.local node -r dotenv/config node_modules/prisma/build/index.js migrate deploy
+npm run db:generate
+DOTENV_CONFIG_PATH=.env.local node -r dotenv/config node_modules/tsx/dist/cli.mjs prisma/sync-permissions.ts
+npx tsx --test lib/tf-days.test.ts
+npm run lint
+npm run build
+```
+
+Das bloße Erstellen der Migration ändert weder die Neon-Produktionsdatenbank noch Vercel. Bei einem später geplanten Produktionswechsel muss dieselbe Migration bewusst gegen die dafür vorgesehene `DATABASE_URL` angewendet werden; kein `prisma migrate reset`.

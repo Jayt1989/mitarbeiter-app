@@ -4,7 +4,7 @@ import { apiJson } from "@/lib/api-client";
 
 export interface VacationRepository {
   loadAll(): Promise<VacationRequest[]>;
-  create(input: { startDate: string; endDate: string; comment: string }): Promise<VacationRequest>;
+  create(input: { startDate: string; endDate: string; comment: string; requestType?: "VACATION" | "TF_DAY" }): Promise<VacationRequest>;
   decide(id: string, status: "Genehmigt" | "Abgelehnt" | "Storniert"): Promise<VacationRequest>;
 }
 

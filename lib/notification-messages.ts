@@ -34,6 +34,20 @@ export function vacationRequestNotification(
   };
 }
 
+export function tfDayRequestNotification(
+  userId: string,
+  employeeName: string,
+  request: VacationRequestPeriod,
+): NotificationInput {
+  return {
+    userId,
+    title: "Neuer TF-Antrag",
+    message: `Neuer TF-Antrag von ${employeeName} für ${notificationDate(request.startDate)} bis ${notificationDate(request.endDate)}.`,
+    type: "TF_DAY_REQUESTED",
+    link: `/admin/urlaub?request=${encodeURIComponent(request.id)}`,
+  };
+}
+
 export function swapApprovalNotification(
   userId: string,
   swap: { id: string; requesterName: string; partnerName: string },
@@ -48,9 +62,19 @@ export function swapApprovalNotification(
 }
 
 export function vacationNotification(
-  request: Period,
+  request: Period & { requestType?: "VACATION" | "TF_DAY" },
   status: "APPROVED" | "REJECTED",
 ): NotificationInput {
+  if (request.requestType === "TF_DAY") {
+    const decision = status === "APPROVED" ? "genehmigt" : "abgelehnt";
+    return {
+      employeeId: request.employeeId,
+      title: status === "APPROVED" ? "TF-Antrag genehmigt" : "TF-Antrag abgelehnt",
+      message: `Dein TF-Antrag vom ${notificationDate(request.startDate)} bis ${notificationDate(request.endDate)} wurde ${decision}.`,
+      type: status === "APPROVED" ? "TF_DAY_APPROVED" : "TF_DAY_REJECTED",
+      link: "/urlaub",
+    };
+  }
   const decision = status === "APPROVED" ? "genehmigt" : "abgelehnt";
   return {
     employeeId: request.employeeId,

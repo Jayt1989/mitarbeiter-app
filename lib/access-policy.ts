@@ -37,7 +37,8 @@ export function canAccessPage(context: AccessContext, path: string) {
   if (at("/admin/schichttausch")) return manager && has("approveShiftSwap");
   if (at("/admin/qualifikationen")) return manager &&
     (has("viewQualifications") || has("editQualifications") || has("manageQualifications"));
-  if (at("/admin/urlaub")) return manager && (has("otherVacations") || has("approveVacation"));
+  if (at("/admin/urlaub")) return manager &&
+    (has("otherVacations") || has("approveVacation") || has("manageTfDayEntitlements"));
   if (at("/admin/mindestbesetzung")) return manager && has("editMinimumStaffing") && has("editDepartments");
   if (at("/admin/einsatzplanung")) return manager && has("editAssignments");
   if (at("/admin/einstellungen")) return manager && has("editCalendar");

@@ -48,6 +48,10 @@ export default function EmployeeManagement({ access }: {
     canManageAccounts: access.role === "ADMIN" && access.permissions.editEmployees === true,
     employeeId: access.employeeId,
   };
+  const tfYear = new Date().getFullYear();
+  const canManageTfDays =
+    ["ADMIN", "FOREMAN"].includes(access.role) &&
+    access.permissions.manageTfDayEntitlements === true;
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("Alle Rollen");
@@ -62,6 +66,7 @@ export default function EmployeeManagement({ access }: {
   const [createdAccount, setCreatedAccount] = useState<{ name: string; login: string; password: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [removalNotice, setRemovalNotice] = useState("");
+  const [tfEntitlement, setTfEntitlement] = useState(0);
 
   useEffect(() => {
     let isCurrent = true;
@@ -156,13 +161,55 @@ export default function EmployeeManagement({ access }: {
     setStartPassword("");
     setStartPasswordGenerated(false);
     setCreatedAccount(null);
+    setTfEntitlement(0);
     setDraft(createEmployeeDraft());
   }
 
   function openEditEmployee(employee: Employee) {
     setFormError("");
     setCreatedAccount(null);
+    setTfEntitlement(0);
     setDraft(cloneEmployee(employee));
+
+    if (canManageTfDays) {
+      void fetch(`/api/tf-day-accounts?year=${tfYear}`, { cache: "no-store" })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(payload?.error ?? "TF-Tage konnten nicht geladen werden.");
+          }
+
+          const accounts = payload as Array<{ employeeId: string; entitlement: number }>;
+          const account = accounts.find((entry) => entry.employeeId === employee.id);
+          setTfEntitlement(account?.entitlement ?? 0);
+        })
+        .catch((error: unknown) => {
+          setFormError(
+            error instanceof Error
+              ? error.message
+              : "TF-Tage konnten nicht geladen werden.",
+          );
+        });
+    }
+  }
+
+  async function saveTfDayEntitlement(employeeId: string) {
+    if (!canManageTfDays) return;
+
+    const response = await fetch("/api/tf-day-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId,
+        year: tfYear,
+        entitlement: tfEntitlement,
+      }),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "TF-Tage konnten nicht gespeichert werden.");
+    }
   }
 
   async function reloadEmployees() {
@@ -283,6 +330,9 @@ export default function EmployeeManagement({ access }: {
     setIsSaving(true);
     try {
       await employeeRepository.saveAll(nextEmployees);
+      if (savedEmployee.id && canManageTfDays) {
+        await saveTfDayEntitlement(savedEmployee.id);
+      }
       setEmployees(nextEmployees);
       setDraft(null);
       void reloadEmployees();
@@ -691,6 +741,24 @@ export default function EmployeeManagement({ access }: {
                         className={inputClass}
                       />
                     </Field>
+                    {canManageTfDays && draft.id && (
+                      <Field label={`TF-Tage Anspruch ${tfYear}`} htmlFor="tfDayEntitlement">
+                        <input
+                          id="tfDayEntitlement"
+                          type="number"
+                          min="0"
+                          max="365"
+                          step="1"
+                          value={tfEntitlement}
+                          onChange={(event) =>
+                            setTfEntitlement(
+                              Math.max(0, Number.parseInt(event.target.value || "0", 10)),
+                            )
+                          }
+                          className={inputClass}
+                        />
+                      </Field>
+                    )}
                     <Field label="Resturlaub Vorjahr (Tage)" htmlFor="carryOverLeaveDays">
                       <input
                         id="carryOverLeaveDays"

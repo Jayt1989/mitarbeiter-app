@@ -10,7 +10,11 @@ import PersonalDashboard from "./personal-dashboard";
 import AccessProvider from "@/app/components/access-provider";
 import { effectivePermissions } from "@/lib/access-policy";
 
-function dashboard(role: string, permissions: Record<string, boolean>) {
+function dashboard(
+  role: string,
+  permissions: Record<string, boolean>,
+  tfDays: PersonalDashboardData["tfDays"] = null,
+) {
   const access = {
     userId: "u", employeeId: "e", role,
     permissions: effectivePermissions(role, { ownShiftPlan: true, requestVacation: true, ...permissions }),
@@ -18,7 +22,7 @@ function dashboard(role: string, permissions: Record<string, boolean>) {
   const data: PersonalDashboardData = {
     greeting: "Guten Tag", todayKey: "2026-10-10", employee: sampleEmployees[2],
     areaName: null, shiftModelLabel: "Nur Früh", today: null, nextShift: null, week: [],
-    vacation: null, absences: [], upcomingAssignment: null, qualifications: null,
+    vacation: null, tfDays, absences: [], upcomingAssignment: null, qualifications: null,
     permissions: {
       shiftPlan: false, yearPlan: true, ownVacation: false, requestVacation: true,
       qualifications: false, shiftSwap: false,
@@ -28,6 +32,14 @@ function dashboard(role: string, permissions: Record<string, boolean>) {
   };
   return renderToStaticMarkup(<AccessProvider initialAccess={access}><NotificationsProvider><PersonalDashboard data={data} /></NotificationsProvider></AccessProvider>);
 }
+
+test("TF-Kontostand wird auch mit reiner Antragsberechtigung angezeigt", () => {
+  const html = dashboard("EMPLOYEE", { requestVacation: true }, {
+    year: 2026, hasAccount: true, entitlement: 8, approvedDays: 0, pendingDays: 0, remainingDays: 8,
+  });
+  assert.match(html, /TF-Tage 2026/);
+  assert.match(html, /8 Tage/);
+});
 
 test("Mitarbeiter-Kachel Leistung verlinkt direkt zur Erfassung und nutzt den bestehenden responsiven Kachelstil", () => {
   const html = dashboard("EMPLOYEE", { recordPerformance: true, viewPerformance: true, managePerformanceTargets: true });

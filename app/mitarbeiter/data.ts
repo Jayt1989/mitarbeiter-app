@@ -32,6 +32,7 @@ export type EmployeePermissions = {
   editAssignments: boolean;
   editCalendar: boolean;
   manageVacationYears: boolean;
+  manageTfDayEntitlements: boolean;
   exportReports: boolean;
   viewReports: boolean;
   requestShiftSwap: boolean;
@@ -75,6 +76,7 @@ export const permissionOptions = [
   { id: "editAssignments", label: "Einsatzplanung bearbeiten" },
   { id: "editCalendar", label: "Feiertage & Kalender bearbeiten" },
   { id: "manageVacationYears", label: "Urlaubsjahre verwalten" },
+  { id: "manageTfDayEntitlements", label: "TF-Tage-Ansprüche verwalten" },
   { id: "exportReports", label: "Exporte erstellen" },
   { id: "viewReports", label: "Auswertungen sehen" },
   { id: "requestShiftSwap", label: "Eigenen Schichttausch anfragen und beantworten" },
@@ -152,6 +154,7 @@ function makePermissions(
     editAssignments: false,
     editCalendar: false,
     manageVacationYears: false,
+    manageTfDayEntitlements: false,
     exportReports: false,
     viewReports: false,
     requestShiftSwap: true,
