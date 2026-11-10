@@ -89,7 +89,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const timingStartedAt = Date.now();
+  let timingLastAt = timingStartedAt;
+  const timings: Record<string, number> = {};
+  const timingMark = (name: string) => {
+    const now = Date.now();
+    timings[name] = now - timingLastAt;
+    timingLastAt = now;
+  };
+
   const context = await getAuthorizationContext();
+  timingMark("authorization");
   if (!context) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   if (!["ADMIN", "FOREMAN"].includes(context.role) ||
     !hasPermission(context, "manageTfDayEntitlements")) {
@@ -101,6 +111,7 @@ export async function POST(request: Request) {
     year?: unknown;
     entitlement?: unknown;
   } | null;
+  timingMark("parseBody");
   if (
     typeof body?.employeeId !== "string" ||
     !isValidYear(body.year) ||
@@ -119,9 +130,11 @@ export async function POST(request: Request) {
     where: { id: employeeId, isActive: true },
     include: employeeRelations,
   });
+  timingMark("employee");
   if (!employeeRecord) return NextResponse.json({ error: "Aktiver Mitarbeiter nicht gefunden." }, { status: 404 });
 
   const calendarState = await loadCalendarState();
+  timingMark("calendar");
   const employee = toEmployeeDto(employeeRecord);
   try {
     const { account, old } = await prisma.$transaction(async (tx) => {
@@ -158,6 +171,8 @@ export async function POST(request: Request) {
       });
       return { account, old };
     }, { isolationLevel: "Serializable" });
+    timingMark("transaction");
+
     await recordAuditLog({
       actorUserId: context.userId,
       action: old ? "tfDayAccount.update" : "tfDayAccount.create",
@@ -166,9 +181,23 @@ export async function POST(request: Request) {
       oldValues: old ? { year: old.year, entitlement: old.entitlement } : null,
       newValues: { employeeId: account.employeeId, year: account.year, entitlement: account.entitlement },
     });
+    timingMark("audit");
 
-    return NextResponse.json((await loadSummaries(account.year, [account.employeeId]))[0]);
+    const summary = (await loadSummaries(account.year, [account.employeeId]))[0];
+    timingMark("summary");
+
+    console.log("[TF_TIMING]", {
+      ...timings,
+      total: Date.now() - timingStartedAt,
+    });
+
+    return NextResponse.json(summary);
   } catch (error) {
+    console.log("[TF_TIMING_ERROR]", {
+      ...timings,
+      total: Date.now() - timingStartedAt,
+    });
+
     if (error instanceof TfDayEntitlementError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
