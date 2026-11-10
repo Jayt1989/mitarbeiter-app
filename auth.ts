@@ -83,65 +83,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     ...authConfig.callbacks,
     async jwt({ token, user }) {
-      const authToken = token as typeof token & { authCheckedAt?: number };
-
       if (user) {
-        authToken.role = user.role;
-        authToken.employeeId = user.employeeId;
-        authToken.permissions = user.permissions;
-        authToken.mustChangePassword = user.mustChangePassword;
-        authToken.passwordChangedAt = user.passwordChangedAt;
-        authToken.authCheckedAt = Date.now();
-        return authToken;
+        token.role = user.role;
+        token.employeeId = user.employeeId;
+        token.permissions = user.permissions;
+        token.mustChangePassword = user.mustChangePassword;
+        token.passwordChangedAt = user.passwordChangedAt;
+        return token;
       }
-
-      if (!authToken.sub) return null;
-
-      // Datenbankprüfung höchstens einmal pro Minute.
-      // Dadurch verursachen normale Seiten- und API-Aufrufe nicht ständig
-      // zusätzliche Neon-Abfragen.
-      const now = Date.now();
-      if (
-        authToken.authCheckedAt &&
-        now - authToken.authCheckedAt < 60_000
-      ) {
-        return authToken;
-      }
-
+      if (!token.sub) return null;
+      // Bei jeder Anfrage gegen die Datenbank prüfen: deaktivierte Konten und Sitzungen,
+      // deren Passwort inzwischen geändert/zurückgesetzt wurde, werden sofort beendet.
       const current = await prisma.user.findUnique({
-        where: { id: authToken.sub },
+        where: { id: token.sub },
         include: {
           role: { include: { permissions: { include: { permission: true } } } },
           employee: { include: { permissions: { include: { permission: true } } } },
         },
       });
-
       if (!current?.active || current.employee?.isActive === false) return null;
-      if (
-        (current.passwordChangedAt?.getTime() ?? null) !==
-        (authToken.passwordChangedAt ?? null)
-      ) {
+      if ((current.passwordChangedAt?.getTime() ?? null) !== (token.passwordChangedAt ?? null)) {
         return null;
       }
-
-      authToken.mustChangePassword = current.mustChangePassword;
+      token.mustChangePassword = current.mustChangePassword;
       const permissions = Object.fromEntries(
         current.role.permissions.map((entry) => [entry.permission.key, entry.allowed]),
       );
       for (const entry of current.employee?.permissions ?? []) {
         permissions[entry.permission.key] = entry.allowed;
       }
-
-      authToken.role = current.role.code;
-      authToken.employeeId = current.employeeId;
-      authToken.permissions = effectivePermissions(current.role.code, permissions);
-      authToken.name = current.employee
+      token.role = current.role.code;
+      token.employeeId = current.employeeId;
+      token.permissions = effectivePermissions(current.role.code, permissions);
+      token.name = current.employee
         ? `${current.employee.firstName} ${current.employee.lastName}`
         : current.email ?? current.login;
-      authToken.email = current.email;
-      authToken.authCheckedAt = now;
-
-      return authToken;
+      token.email = current.email;
+      return token;
     },
     async session({ session, token }) {
       if (session.user) {
