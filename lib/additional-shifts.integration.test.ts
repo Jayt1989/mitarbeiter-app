@@ -57,6 +57,16 @@ test("Zusatzschichten: Migration, Samstag/ Sonntag, Konflikte, Freigabe, Dashboa
     const defaults = await prisma.rolePermission.findMany({ where: { permission: { key: { endsWith: "AdditionalShifts" } } }, include: { role: true } });
     assert.equal(defaults.length, 12);
     assert.ok(defaults.every((entry) => entry.allowed === (entry.role.code !== "EMPLOYEE")));
+
+    // Nach dem gezielten Test der Zusatzschicht-Migration das temporäre
+    // Testschema auf den aktuellen Stand bringen. Der heutige Anwendungscode
+    // erwartet z. B. VacationRequest.requestType für Urlaub und TF-Tage.
+    for (const name of migrations.filter((name) => name > migration)) {
+      await connection.query(
+        await readFile(`prisma/migrations/${name}/migration.sql`, "utf8"),
+      );
+    }
+
     const context: AuthorizationContext = { userId: user.id, employeeId: null, login: user.login, role: "ADMIN",
       permissions: { viewAdditionalShifts: true, planAdditionalShifts: true, releaseAdditionalShifts: true, cancelAdditionalShifts: true, teamShiftPlan: true } };
     const { createAdditionalShifts, changeAdditionalShift, checkAdditionalShifts } = await import("./additional-shifts");

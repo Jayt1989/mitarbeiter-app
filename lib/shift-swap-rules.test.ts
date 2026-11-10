@@ -73,7 +73,7 @@ test("valid working shifts have no conflicts", () => {
   assert.deepEqual(swapDayWarnings(facts), []);
 });
 for (const [key, pattern] of [
-  ["vacation", /Urlaubsantrag/], ["absence", /Abwesenheit/], ["manual", /manuelle/],
+  ["vacation", /Urlaubs- oder TF-Antrag/], ["absence", /Abwesenheit/], ["manual", /manuelle/],
   ["assignment", /temporärer/], ["openSwap", /offene Tauschanfrage/],
 ] as const) {
   test(`${key} blocks a swap with a readable warning`, () => {
